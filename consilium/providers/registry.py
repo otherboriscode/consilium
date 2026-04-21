@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from consilium.cost import MODEL_PRICING
+
 from .anthropic import AnthropicProvider
 from .base import BaseProvider
 from .openrouter import OpenRouterProvider
@@ -21,6 +23,8 @@ class ProviderRegistry:
         self._perplexity = PerplexityProvider(api_key=perplexity_key)
 
     def get_provider(self, model: str) -> BaseProvider:
+        if model not in MODEL_PRICING:
+            raise KeyError(f"Model '{model}' not registered in MODEL_PRICING")
         if model.startswith("claude-"):
             return self._anthropic
         if model.startswith("perplexity/"):

@@ -23,3 +23,9 @@ def test_registry_unknown_model_raises():
     registry = ProviderRegistry(anthropic_key="a", openrouter_key="b", perplexity_key="c")
     with pytest.raises(KeyError):
         registry.get_provider("unknown-model-x")
+
+
+def test_registry_rejects_model_not_in_pricing():
+    registry = ProviderRegistry(anthropic_key="a", openrouter_key="b", perplexity_key="c")
+    with pytest.raises(KeyError, match="not registered in MODEL_PRICING"):
+        registry.get_provider("mistral/large-latest")  # prefix matches, but absent in pricing

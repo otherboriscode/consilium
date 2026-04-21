@@ -5,12 +5,15 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 
 from consilium.cost import estimate_cost
-from consilium.models import ParticipantConfig, RoundMessage
+from consilium.models import ParticipantConfig, ProgressEvent, RoundMessage
 from consilium.prompts import build_round_user_message
 from consilium.providers.base import CallUsage, Message, ProviderError
 from consilium.providers.registry import ProviderRegistry
+
+ProgressCallback = Callable[[ProgressEvent], Awaitable[None]]
 
 
 async def _call_one_participant(
@@ -21,6 +24,7 @@ async def _call_one_participant(
     total_rounds: int,
     transcript_so_far: str,
     registry: ProviderRegistry,
+    progress: ProgressCallback | None = None,
 ) -> RoundMessage:
     user_msg_text = build_round_user_message(
         topic=topic,
@@ -49,7 +53,7 @@ async def _call_one_participant(
             cache_read_tokens=result.usage.cache_read_tokens,
             cache_write_tokens=result.usage.cache_write_tokens,
         )
-        return RoundMessage(
+        msg = RoundMessage(
             round_index=round_index,
             role_slug=participant.role,
             text=result.text,
@@ -58,8 +62,17 @@ async def _call_one_participant(
             duration_seconds=result.duration_seconds,
             cost_usd=cost,
         )
+        if progress is not None:
+            await progress(
+                ProgressEvent(
+                    kind="participant_completed",
+                    round_index=round_index,
+                    role_slug=participant.role,
+                )
+            )
+        return msg
     except asyncio.TimeoutError:
-        return RoundMessage(
+        msg = RoundMessage(
             round_index=round_index,
             role_slug=participant.role,
             text=None,
@@ -68,8 +81,18 @@ async def _call_one_participant(
             duration_seconds=participant.timeout_seconds,
             cost_usd=0.0,
         )
+        if progress is not None:
+            await progress(
+                ProgressEvent(
+                    kind="participant_failed",
+                    round_index=round_index,
+                    role_slug=participant.role,
+                    error="timeout",
+                )
+            )
+        return msg
     except ProviderError as e:
-        return RoundMessage(
+        msg = RoundMessage(
             round_index=round_index,
             role_slug=participant.role,
             text=None,
@@ -78,6 +101,16 @@ async def _call_one_participant(
             duration_seconds=0.0,
             cost_usd=0.0,
         )
+        if progress is not None:
+            await progress(
+                ProgressEvent(
+                    kind="participant_failed",
+                    round_index=round_index,
+                    role_slug=participant.role,
+                    error=e.kind,
+                )
+            )
+        return msg
 
 
 async def run_round(
@@ -88,6 +121,7 @@ async def run_round(
     total_rounds: int,
     transcript_so_far: str,
     registry: ProviderRegistry,
+    progress: ProgressCallback | None = None,
 ) -> list[RoundMessage]:
     """Run all participants in parallel for one round. Preserves input order."""
     coros = [
@@ -98,6 +132,7 @@ async def run_round(
             total_rounds=total_rounds,
             transcript_so_far=transcript_so_far,
             registry=registry,
+            progress=progress,
         )
         for p in participants
     ]

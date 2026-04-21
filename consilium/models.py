@@ -73,6 +73,24 @@ class JudgeOutput(BaseModel):
     scores: dict[str, int]
 
 
+ProgressKind = Literal[
+    "round_started",
+    "participant_completed",
+    "participant_failed",
+    "round_completed",
+    "judge_started",
+    "judge_completed",
+    "judge_failed",
+]
+
+
+class ProgressEvent(BaseModel):
+    kind: ProgressKind
+    round_index: int | None = None
+    role_slug: str | None = None
+    error: str | None = None
+
+
 class JobResult(BaseModel):
     job_id: int
     config: JobConfig

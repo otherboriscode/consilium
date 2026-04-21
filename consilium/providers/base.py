@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 
@@ -21,6 +21,7 @@ class CallResult:
     model: str
     finish_reason: str
     duration_seconds: float
+    citations: list[str] = field(default_factory=list)
 
 
 Role = Literal["system", "user", "assistant"]

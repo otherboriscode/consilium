@@ -34,11 +34,13 @@ def registry() -> ProviderRegistry:
 )
 async def test_real_api_smoke(registry: ProviderRegistry, model: str):
     provider = registry.get_provider(model)
+    # Reasoning models (gpt-5, gemini-2.5-pro, deepseek-r1) consume most of the
+    # budget on hidden thinking, so the visible answer needs enough room to appear.
     result = await provider.call(
         model=model,
         system="You are a helpful assistant. Answer in exactly one sentence.",
         messages=[Message(role="user", content="What is 2+2?")],
-        max_tokens=50,
+        max_tokens=500,
     )
     assert result.text.strip()
     assert result.usage.input_tokens > 0

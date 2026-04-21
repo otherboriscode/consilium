@@ -1,0 +1,54 @@
+[project]
+name = "consilium"
+version = "0.1.0"
+description = "Multi-LLM council for developer product concept work"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "tiktoken>=0.7",
+    "anthropic>=0.40",
+    "pymupdf>=1.24",
+    "python-docx>=1.1",
+    "aiosqlite>=0.20",
+]
+
+[project.optional-dependencies]
+server = [
+    "aiogram>=3.4",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+]
+mcp = [
+    "mcp>=1.0",
+]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+consilium = "consilium_cli.main:main"
+consilium-mcp = "consilium_mcp.server:main"
+consilium-bot = "consilium_server.bot.main:main"
+consilium-api = "consilium_server.api.main:main"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = ["integration: real API calls, skipped by default"]
+addopts = "-m 'not integration'"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["consilium*", "consilium_server*", "consilium_mcp*", "consilium_cli*"]

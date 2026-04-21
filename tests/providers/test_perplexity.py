@@ -2,7 +2,7 @@ import json as _json
 
 import pytest
 import respx
-from consilium.providers.base import Message
+from consilium.providers.base import Message, ProviderError
 from consilium.providers.perplexity import PerplexityProvider
 
 
@@ -49,3 +49,36 @@ async def test_perplexity_basic_call_with_citations():
     # Provider must strip the "perplexity/" prefix before calling the real API.
     parsed = _json.loads(route.calls[0].request.content)
     assert parsed["model"] == "sonar-deep-research"
+
+
+@pytest.mark.asyncio
+async def test_perplexity_raises_provider_error_on_400():
+    provider = PerplexityProvider(api_key="pplx-test")
+    with respx.mock(base_url="https://api.perplexity.ai") as mock:
+        mock.post("/chat/completions").respond(400, json={"error": {"message": "bad"}})
+        with pytest.raises(ProviderError) as exc_info:
+            await provider.call(
+                model="perplexity/sonar-deep-research",
+                system="s",
+                messages=[Message(role="user", content="hi")],
+                max_tokens=10,
+            )
+    assert exc_info.value.kind == "http_4xx"
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.provider == "perplexity"
+
+
+@pytest.mark.asyncio
+async def test_perplexity_raises_provider_error_on_500():
+    provider = PerplexityProvider(api_key="pplx-test")
+    with respx.mock(base_url="https://api.perplexity.ai") as mock:
+        mock.post("/chat/completions").respond(502, json={"error": {"message": "bad gw"}})
+        with pytest.raises(ProviderError) as exc_info:
+            await provider.call(
+                model="perplexity/sonar-deep-research",
+                system="s",
+                messages=[Message(role="user", content="hi")],
+                max_tokens=10,
+            )
+    assert exc_info.value.kind == "http_5xx"
+    assert exc_info.value.status_code == 502

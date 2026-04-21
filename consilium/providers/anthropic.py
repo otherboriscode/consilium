@@ -4,7 +4,7 @@ import time
 
 import httpx
 
-from .base import BaseProvider, CallResult, CallUsage, Message
+from .base import BaseProvider, CallResult, CallUsage, Message, wrap_http_error
 
 
 class AnthropicProvider(BaseProvider):
@@ -50,12 +50,15 @@ class AnthropicProvider(BaseProvider):
             body["thinking"] = {"type": "enabled", "budget_tokens": 16_000}
 
         t0 = time.monotonic()
-        async with httpx.AsyncClient(
-            base_url=self._base_url, timeout=timeout_seconds
-        ) as client:
-            r = await client.post("/v1/messages", headers=headers, json=body)
-            r.raise_for_status()
-            data = r.json()
+        try:
+            async with httpx.AsyncClient(
+                base_url=self._base_url, timeout=timeout_seconds
+            ) as client:
+                r = await client.post("/v1/messages", headers=headers, json=body)
+                r.raise_for_status()
+                data = r.json()
+        except httpx.HTTPError as exc:
+            raise wrap_http_error(exc, provider=self.name, model=model) from exc
         duration = time.monotonic() - t0
 
         text = "".join(

@@ -3,7 +3,7 @@ import json as _json
 import pytest
 import respx
 from consilium.providers.anthropic import AnthropicProvider
-from consilium.providers.base import Message
+from consilium.providers.base import Message, ProviderError
 
 
 @pytest.mark.asyncio
@@ -105,3 +105,57 @@ async def test_system_prompt_has_cache_control_when_enabled():
     # system должна быть списком блоков с cache_control на последнем
     assert isinstance(parsed["system"], list)
     assert parsed["system"][-1]["cache_control"] == {"type": "ephemeral"}
+
+
+@pytest.mark.asyncio
+async def test_anthropic_raises_provider_error_on_400():
+    provider = AnthropicProvider(api_key="sk-test")
+    with respx.mock(base_url="https://api.anthropic.com") as mock:
+        mock.post("/v1/messages").respond(
+            400, json={"error": {"type": "invalid_request_error", "message": "bad request"}}
+        )
+        with pytest.raises(ProviderError) as exc_info:
+            await provider.call(
+                model="claude-opus-4-7",
+                system="s",
+                messages=[Message(role="user", content="hi")],
+                max_tokens=10,
+            )
+    e = exc_info.value
+    assert e.kind == "http_4xx"
+    assert e.status_code == 400
+    assert e.provider == "anthropic"
+    assert e.model == "claude-opus-4-7"
+
+
+@pytest.mark.asyncio
+async def test_anthropic_raises_provider_error_on_500():
+    provider = AnthropicProvider(api_key="sk-test")
+    with respx.mock(base_url="https://api.anthropic.com") as mock:
+        mock.post("/v1/messages").respond(500, json={"error": {"message": "server error"}})
+        with pytest.raises(ProviderError) as exc_info:
+            await provider.call(
+                model="claude-opus-4-7",
+                system="s",
+                messages=[Message(role="user", content="hi")],
+                max_tokens=10,
+            )
+    assert exc_info.value.kind == "http_5xx"
+    assert exc_info.value.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_anthropic_content_policy_detected():
+    provider = AnthropicProvider(api_key="sk-test")
+    with respx.mock(base_url="https://api.anthropic.com") as mock:
+        mock.post("/v1/messages").respond(
+            400, json={"error": {"type": "content_policy", "message": "blocked"}}
+        )
+        with pytest.raises(ProviderError) as exc_info:
+            await provider.call(
+                model="claude-opus-4-7",
+                system="s",
+                messages=[Message(role="user", content="hi")],
+                max_tokens=10,
+            )
+    assert exc_info.value.kind == "content_policy"

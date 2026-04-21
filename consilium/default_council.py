@@ -39,25 +39,43 @@ _JUDGE_PROMPT = """\
 
 
 def build_default_council(topic: str) -> JobConfig:
+    # Per-model max_tokens: reasoning models (gpt-5, gemini-2.5-pro, deepseek-r1,
+    # grok-4) burn hidden tokens on thinking before emitting visible output. The
+    # ParticipantConfig default of 1200 is fine for non-reasoning Claude models
+    # but leaves reasoning models with zero or truncated output. Budgets below
+    # are calibrated on the first real debate (2026-04-21).
     return JobConfig(
         topic=topic,
         participants=[
             ParticipantConfig(
-                model="claude-opus-4-7", role="architect", system_prompt=_ARCHITECT_PROMPT
+                model="claude-opus-4-7",
+                role="architect",
+                system_prompt=_ARCHITECT_PROMPT,
+                max_tokens=2500,
             ),
             ParticipantConfig(
-                model="openai/gpt-5", role="marketer", system_prompt=_MARKETER_PROMPT
+                model="openai/gpt-5",
+                role="marketer",
+                system_prompt=_MARKETER_PROMPT,
+                max_tokens=4000,
             ),
             ParticipantConfig(
-                model="google/gemini-2.5-pro", role="analyst", system_prompt=_ANALYST_PROMPT
+                model="google/gemini-2.5-pro",
+                role="analyst",
+                system_prompt=_ANALYST_PROMPT,
+                max_tokens=4000,
             ),
             ParticipantConfig(
-                model="deepseek/deepseek-r1", role="engineer", system_prompt=_ENGINEER_PROMPT
+                model="deepseek/deepseek-r1",
+                role="engineer",
+                system_prompt=_ENGINEER_PROMPT,
+                max_tokens=3000,
             ),
             ParticipantConfig(
                 model="x-ai/grok-4",
                 role="devil_advocate",
                 system_prompt=_DEVIL_ADVOCATE_PROMPT,
+                max_tokens=3000,
             ),
         ],
         judge=JudgeConfig(model="claude-haiku-4-5", system_prompt=_JUDGE_PROMPT),

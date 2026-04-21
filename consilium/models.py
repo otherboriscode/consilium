@@ -17,6 +17,11 @@ class ParticipantConfig(BaseModel):
     role: str = Field(..., min_length=1, max_length=50)
     system_prompt: str = Field(..., min_length=1)
     deep: bool = False
+    # FIXME(phase3): default=1200 is too low for reasoning models (gpt-5,
+    # gemini-2.5-pro, deepseek-r1, grok-4) — hidden reasoning tokens eat the
+    # budget and visible output comes back empty or truncated. When the YAML
+    # template loader replaces default_council.py, consider raising this default
+    # to 2500 and making it per-role in templates.
     max_tokens: int = Field(default=1200, ge=100, le=16_000)
     timeout_seconds: float = Field(default=300.0, ge=10, le=10_800)
 

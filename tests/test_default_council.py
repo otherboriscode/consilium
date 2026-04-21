@@ -31,3 +31,21 @@ def test_default_council_all_system_prompts_in_russian():
     for p in cfg.participants:
         assert any("а" <= ch.lower() <= "я" for ch in p.system_prompt)
     assert any("а" <= ch.lower() <= "я" for ch in cfg.judge.system_prompt)
+
+
+def test_default_council_reasoning_models_have_adequate_max_tokens():
+    """Reasoning models (gpt-5, gemini-2.5-pro, deepseek-r1, grok-4) burn hidden
+    tokens on thinking before emitting visible output. The default 1200 is not
+    enough — marketer (gpt-5) came back empty and analyst (gemini-2.5-pro) got
+    truncated mid-sentence in the first real-world debate (2026-04-21).
+    """
+    cfg = build_default_council(topic="t")
+    by_role = {p.role: p for p in cfg.participants}
+    # Reasoning-heavy models need ≥3000 max_tokens to output a 400-800 word answer.
+    assert by_role["marketer"].max_tokens >= 4000
+    assert by_role["analyst"].max_tokens >= 4000
+    assert by_role["engineer"].max_tokens >= 3000
+    assert by_role["devil_advocate"].max_tokens >= 3000
+    # Opus is not a reasoning model by default (deep=False) but benefits from
+    # room for a full structured essay.
+    assert by_role["architect"].max_tokens >= 2000

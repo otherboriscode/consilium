@@ -82,3 +82,36 @@ async def test_perplexity_raises_provider_error_on_500():
             )
     assert exc_info.value.kind == "http_5xx"
     assert exc_info.value.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_perplexity_deep_passes_unchanged():
+    """deep=True should not corrupt Perplexity request body (Perplexity has no
+    reasoning_effort/thinking parameter — it's simply ignored)."""
+    provider = PerplexityProvider(api_key="pplx-test")
+    with respx.mock(base_url="https://api.perplexity.ai") as mock:
+        route = mock.post("/chat/completions").respond(
+            200,
+            json={
+                "choices": [
+                    {"message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}
+                ],
+                "model": "sonar-deep-research",
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+                "citations": [],
+            },
+        )
+        await provider.call(
+            model="perplexity/sonar-deep-research",
+            system="s",
+            messages=[Message(role="user", content="hi")],
+            max_tokens=10,
+            deep=True,
+        )
+    parsed = _json.loads(route.calls[0].request.content)
+    # These reasoning-related params MUST NOT appear for Perplexity
+    assert "reasoning_effort" not in parsed
+    assert "thinking" not in parsed
+    # And the rest of the request is well-formed
+    assert parsed["model"] == "sonar-deep-research"
+    assert parsed["messages"][0]["role"] == "system"

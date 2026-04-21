@@ -36,16 +36,18 @@ class AnthropicProvider(BaseProvider):
         if cache_last_system_block:
             system_blocks[-1]["cache_control"] = {"type": "ephemeral"}  # 5-min TTL
 
+        # Claude 4.x deprecated explicit temperature; API rejects it with 400.
+        # The `temperature` kwarg is kept in the signature for BaseProvider parity.
+        _ = temperature
+
         body: dict = {
             "model": model,
             "max_tokens": max_tokens,
-            "temperature": temperature,
             "system": system_blocks,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
         }
         if deep:
             body["thinking"] = {"type": "enabled", "budget_tokens": 16_000}
-            body["temperature"] = 1.0  # Anthropic requires temp=1 with thinking
 
         t0 = time.monotonic()
         async with httpx.AsyncClient(

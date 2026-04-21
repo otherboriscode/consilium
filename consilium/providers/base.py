@@ -34,7 +34,7 @@ class ProviderError(Exception):
 
 
 def wrap_http_error(
-    exc: BaseException, *, provider: str, model: str
+    exc: Exception, *, provider: str, model: str
 ) -> ProviderError:
     """Map an httpx exception into a normalized ProviderError."""
     if isinstance(exc, httpx.TimeoutException):

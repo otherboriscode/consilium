@@ -36,10 +36,9 @@ class AnthropicProvider(BaseProvider):
         if cache_last_system_block:
             system_blocks[-1]["cache_control"] = {"type": "ephemeral"}  # 5-min TTL
 
-        # Claude 4.x deprecated explicit temperature; API rejects it with 400.
-        # The `temperature` kwarg is kept in the signature for BaseProvider parity.
-        _ = temperature
-
+        # Claude 4.x deprecated explicit temperature outside thinking mode — the API
+        # rejects it with 400. `temperature` stays in the signature for BaseProvider
+        # parity (OpenRouter/Perplexity still use it) but is intentionally ignored here.
         body: dict = {
             "model": model,
             "max_tokens": max_tokens,

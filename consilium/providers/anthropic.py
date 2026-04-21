@@ -29,15 +29,23 @@ class AnthropicProvider(BaseProvider):
         headers = {
             "x-api-key": self._api_key,
             "anthropic-version": "2023-06-01",
+            "anthropic-beta": "prompt-caching-2024-07-31,extended-cache-ttl-2025-04-11",
             "content-type": "application/json",
         }
+        system_blocks: list[dict] = [{"type": "text", "text": system}]
+        if cache_last_system_block:
+            system_blocks[-1]["cache_control"] = {"type": "ephemeral"}  # 5-min TTL
+
         body: dict = {
             "model": model,
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "system": system,
+            "system": system_blocks,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
         }
+        if deep:
+            body["thinking"] = {"type": "enabled", "budget_tokens": 16_000}
+            body["temperature"] = 1.0  # Anthropic requires temp=1 with thinking
 
         t0 = time.monotonic()
         async with httpx.AsyncClient(

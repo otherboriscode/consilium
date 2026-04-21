@@ -62,14 +62,19 @@ class OpenRouterProvider(BaseProvider):
         choice = data["choices"][0]
         usage = data.get("usage", {})
 
+        # Reasoning tokens (Grok, o-series, deepseek-r1) are already counted
+        # inside completion_tokens for billing, but we expose the reasoning slice
+        # separately for observability and ROI analysis.
+        completion_details = usage.get("completion_tokens_details") or {}
+        prompt_details = usage.get("prompt_tokens_details") or {}
         return CallResult(
             text=choice["message"]["content"] or "",
             usage=CallUsage(
                 input_tokens=usage.get("prompt_tokens", 0),
                 output_tokens=usage.get("completion_tokens", 0),
-                cache_read_tokens=usage.get("prompt_tokens_details", {}).get(
-                    "cached_tokens", 0
-                ),
+                cache_read_tokens=prompt_details.get("cached_tokens", 0),
+                cache_write_tokens=prompt_details.get("cache_write_tokens", 0),
+                thinking_tokens=completion_details.get("reasoning_tokens", 0),
             ),
             model=data.get("model", model),
             finish_reason=choice.get("finish_reason", "unknown"),

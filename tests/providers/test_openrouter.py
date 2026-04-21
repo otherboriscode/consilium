@@ -148,3 +148,36 @@ async def test_openrouter_puts_system_as_first_message():
     assert body["messages"][0]["role"] == "system"
     assert body["messages"][0]["content"] == "SYSTEM_TEXT"
     assert body["messages"][1]["role"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_openrouter_maps_reasoning_tokens_to_thinking():
+    """Reasoning-capable models (Grok, o-series, deepseek-r1) return hidden
+    reasoning tokens in completion_tokens_details.reasoning_tokens. They are
+    already counted inside completion_tokens for billing, but we expose the
+    reasoning slice separately via CallUsage.thinking_tokens."""
+    provider = OpenRouterProvider(api_key="or-test")
+    with respx.mock(base_url="https://openrouter.ai") as mock:
+        mock.post("/api/v1/chat/completions").respond(
+            200,
+            json={
+                "choices": [
+                    {"message": {"role": "assistant", "content": "x"}, "finish_reason": "stop"}
+                ],
+                "model": "x-ai/grok-4",
+                "usage": {
+                    "prompt_tokens": 50,
+                    "completion_tokens": 117,
+                    "completion_tokens_details": {"reasoning_tokens": 109},
+                },
+            },
+        )
+        result = await provider.call(
+            model="x-ai/grok-4",
+            system="s",
+            messages=[Message(role="user", content="hi")],
+            max_tokens=500,
+        )
+    assert result.usage.thinking_tokens == 109
+    # completion_tokens (incl. reasoning) — reported as-is by upstream billing.
+    assert result.usage.output_tokens == 117

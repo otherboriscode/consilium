@@ -135,8 +135,16 @@ class Archive:
             conn.commit()
 
     def save_job(self, result: JobResult) -> SavedJob:
-        """Persist `result` as md + json files and SQLite rows. Idempotent on
-        the same `job_id`: re-running replaces the row and files in place."""
+        """Persist `result` as md + json files and SQLite rows atomically.
+
+        Ordering:
+          1. Prepare content in memory (no disk writes yet)
+          2. Commit SQL transaction (index becomes source of truth for paths)
+          3. Write files via `.tmp` + `os.replace` (atomic rename on POSIX)
+          4. If step 3 fails, roll back the SQL row so no orphan index entry survives
+
+        Idempotent on the same `job_id`: re-running replaces row + files in place.
+        """
         yyyy = result.started_at.strftime("%Y")
         mm = result.started_at.strftime("%m")
         folder = self.root / yyyy / mm
@@ -144,83 +152,116 @@ class Archive:
         slug = _slugify(result.config.topic)
         md_path = folder / f"{result.job_id:04d}-{slug}.md"
         json_path = folder / f"{result.job_id:04d}-{slug}.json"
+        tmp_md = md_path.with_suffix(md_path.suffix + ".tmp")
+        tmp_json = json_path.with_suffix(json_path.suffix + ".tmp")
 
-        md_path.write_text(format_full_markdown(result), encoding="utf-8")
-        json_path.write_text(
-            json.dumps(
-                result.model_dump(mode="json"), ensure_ascii=False, indent=2
-            ),
-            encoding="utf-8",
+        # 1. Build content. Raises before we touch disk or SQL.
+        md_content = format_full_markdown(result)
+        json_content = json.dumps(
+            result.model_dump(mode="json"), ensure_ascii=False, indent=2
         )
 
         transcript_text = "\n\n".join(
             (m.text or "") for m in result.messages if m.text
         )
-
         judge = result.judge
         tldr = judge.tldr if judge else ""
         recommendation = judge.recommendation if judge else ""
-
         role_to_model = {p.role: p.model for p in result.config.participants}
 
+        # 2. SQL first — if FTS insert or anything else blows up, we haven't
+        #    touched the filesystem yet, so no orphan files are left behind.
         with self._connect() as conn:
-            # Full replace — cascades to job_costs, job_scores, jobs_fts_content
-            # via FK ON DELETE CASCADE, and FTS index via trigger.
-            conn.execute("DELETE FROM jobs WHERE job_id = ?", (result.job_id,))
-            conn.execute(
-                """
-                INSERT INTO jobs (
-                    job_id, topic, project, template_name, template_version,
-                    rounds, started_at, completed_at, duration_seconds,
-                    total_cost_usd, judge_truncated, md_path, json_path
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    result.job_id,
-                    result.config.topic,
-                    result.config.project,
-                    result.config.template_name,
-                    result.config.template_version,
-                    result.config.rounds,
-                    result.started_at.isoformat(),
-                    result.completed_at.isoformat(),
-                    result.duration_seconds,
-                    result.total_cost_usd,
-                    int(result.judge_truncated),
-                    str(md_path.relative_to(self.root)),
-                    str(json_path.relative_to(self.root)),
-                ),
-            )
-            for model, cost in result.cost_breakdown.items():
+            try:
+                # Cascades to job_costs, job_scores, jobs_fts_content via
+                # ON DELETE CASCADE; FTS5 index is updated by trigger.
                 conn.execute(
-                    "INSERT INTO job_costs (job_id, model, cost_usd) VALUES (?, ?, ?)",
-                    (result.job_id, model, cost),
+                    "DELETE FROM jobs WHERE job_id = ?", (result.job_id,)
                 )
-            if judge is not None:
-                for role, score in judge.scores.items():
-                    role_model = role_to_model.get(role)
-                    if role_model is None:
-                        continue  # orphan score: judge named a role not in config
+                conn.execute(
+                    """
+                    INSERT INTO jobs (
+                        job_id, topic, project, template_name, template_version,
+                        rounds, started_at, completed_at, duration_seconds,
+                        total_cost_usd, judge_truncated, md_path, json_path
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        result.job_id,
+                        result.config.topic,
+                        result.config.project,
+                        result.config.template_name,
+                        result.config.template_version,
+                        result.config.rounds,
+                        result.started_at.isoformat(),
+                        result.completed_at.isoformat(),
+                        result.duration_seconds,
+                        result.total_cost_usd,
+                        int(result.judge_truncated),
+                        str(md_path.relative_to(self.root)),
+                        str(json_path.relative_to(self.root)),
+                    ),
+                )
+                for model, cost in result.cost_breakdown.items():
                     conn.execute(
-                        "INSERT INTO job_scores (job_id, role, model, score) VALUES (?, ?, ?, ?)",
-                        (result.job_id, role, role_model, score),
+                        "INSERT INTO job_costs (job_id, model, cost_usd) "
+                        "VALUES (?, ?, ?)",
+                        (result.job_id, model, cost),
                     )
-            conn.execute(
-                """
-                INSERT INTO jobs_fts_content
-                    (job_id, topic, project, tldr, recommendation, transcript)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    result.job_id,
-                    result.config.topic,
-                    result.config.project,
-                    tldr,
-                    recommendation,
-                    transcript_text,
-                ),
-            )
-            conn.commit()
+                if judge is not None:
+                    for role, score in judge.scores.items():
+                        role_model = role_to_model.get(role)
+                        if role_model is None:
+                            continue  # judge named a role not in config
+                        conn.execute(
+                            "INSERT INTO job_scores (job_id, role, model, score) "
+                            "VALUES (?, ?, ?, ?)",
+                            (result.job_id, role, role_model, score),
+                        )
+                conn.execute(
+                    """
+                    INSERT INTO jobs_fts_content
+                        (job_id, topic, project, tldr, recommendation, transcript)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        result.job_id,
+                        result.config.topic,
+                        result.config.project,
+                        tldr,
+                        recommendation,
+                        transcript_text,
+                    ),
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        # 3. Write files via tmp + rename. If this throws, roll the SQL back.
+        try:
+            tmp_md.write_text(md_content, encoding="utf-8")
+            os.replace(tmp_md, md_path)
+            tmp_json.write_text(json_content, encoding="utf-8")
+            os.replace(tmp_json, json_path)
+        except Exception:
+            # 4. Rollback: drop the SQL row so index stays consistent.
+            try:
+                with self._connect() as conn:
+                    conn.execute(
+                        "DELETE FROM jobs WHERE job_id = ?", (result.job_id,)
+                    )
+                    conn.commit()
+            except sqlite3.Error:
+                # Best-effort rollback; if even this fails, the original
+                # exception from the file write is more informative.
+                pass
+            for p in (tmp_md, tmp_json):
+                try:
+                    p.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            raise
 
         return SavedJob(job_id=result.job_id, md_path=md_path, json_path=json_path)
 

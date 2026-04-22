@@ -142,3 +142,68 @@ def test_save_year_month_folder_structure(tmp_path):
     # started_at is 2026-04-22 → 2026/04/
     assert saved.md_path.parent.parent.name == "2026"
     assert saved.md_path.parent.name == "04"
+
+
+def test_save_rolls_back_when_file_write_fails(tmp_path, monkeypatch):
+    """If .md write dies after SQL commit, SQL row must be rolled back and
+    no orphan files remain."""
+    archive = Archive(root=tmp_path / "arch")
+    result = make_result(job_id=77)
+
+    original_write_text = type(tmp_path).write_text
+
+    def _fail_md_tmp_write(self, *args, **kwargs):
+        if self.name.endswith(".md.tmp"):
+            raise OSError("simulated disk full")
+        return original_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(type(tmp_path), "write_text", _fail_md_tmp_write)
+
+    import pytest
+
+    with pytest.raises(OSError, match="simulated disk full"):
+        archive.save_job(result)
+
+    # Row must NOT be in SQLite
+    with archive._connect() as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE job_id = 77"
+        ).fetchone()[0] == 0
+
+    # No .md or .json files (only the .tmp would have existed, but we cleaned it)
+    md_files = list((tmp_path / "arch").rglob("*.md"))
+    json_files = list((tmp_path / "arch").rglob("*.json"))
+    assert md_files == []
+    assert json_files == []
+
+
+def test_save_rolls_back_when_sql_fails(tmp_path):
+    """If a SQL statement in the save transaction blows up, no .md/.json
+    are left on disk and no partial row survives the rollback."""
+    import sqlite3 as _sql
+
+    import pytest
+
+    archive = Archive(root=tmp_path / "arch")
+    # Sabotage the schema: drop the FTS content table while keeping the
+    # virtual FTS table that references it. The INSERT INTO jobs_fts_content
+    # inside save_job will then fail with OperationalError.
+    with archive._connect() as conn:
+        conn.execute("DROP TABLE jobs_fts_content")
+        conn.commit()
+
+    result = make_result(job_id=78)
+    with pytest.raises(_sql.OperationalError):
+        archive.save_job(result)
+
+    md_files = list((tmp_path / "arch").rglob("*.md"))
+    json_files = list((tmp_path / "arch").rglob("*.json"))
+    assert md_files == []
+    assert json_files == []
+    with archive._connect() as conn:
+        # We dropped the content table, but the `jobs` row must not have
+        # survived either (transaction rolled back).
+        assert (
+            conn.execute("SELECT COUNT(*) FROM jobs WHERE job_id = 78").fetchone()[0]
+            == 0
+        )

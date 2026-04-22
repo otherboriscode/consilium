@@ -1,5 +1,6 @@
-from consilium.limits import DEFAULT_LIMITS
-from consilium.permissions import check_permissions
+from consilium.limits import DEFAULT_LIMITS, Limits
+from consilium.models import JobConfig, JudgeConfig, ParticipantConfig
+from consilium.permissions import check_permissions, validate_config
 from consilium.usage import CurrentUsage
 
 
@@ -109,3 +110,60 @@ def test_multiple_violations_are_collected():
     kinds = {v.kind for v in r.violations}
     assert "per_job_cap_exceeded" in kinds
     assert "monthly_cap_exceeded" in kinds
+
+
+# ---------- validate_config tests ----------
+
+
+def _cfg(*, rounds=2, max_tokens=3500, context=None):
+    return JobConfig(
+        topic="t",
+        participants=[
+            ParticipantConfig(
+                model="claude-opus-4-7",
+                role="architect",
+                system_prompt="s",
+                max_tokens=max_tokens,
+            ),
+        ],
+        judge=JudgeConfig(model="claude-haiku-4-5", system_prompt="j"),
+        rounds=rounds,
+        context_block=context,
+    )
+
+
+def test_validate_config_allows_defaults():
+    r = validate_config(_cfg(), limits=DEFAULT_LIMITS)
+    assert r.allowed is True
+    assert r.violations == []
+
+
+def test_validate_config_rejects_too_many_rounds():
+    r = validate_config(_cfg(rounds=4), limits=DEFAULT_LIMITS)
+    assert r.allowed is True  # 4 is exactly max
+    # Can't test rounds>4 because JobConfig validates rounds<=4; simulate via
+    # lowered limit instead.
+    tight = Limits(max_rounds=1)
+    r2 = validate_config(_cfg(rounds=2), limits=tight)
+    assert r2.allowed is False
+    assert any(v.kind == "rounds_too_many" for v in r2.violations)
+
+
+def test_validate_config_rejects_huge_max_tokens():
+    tight = Limits(max_tokens_per_response=1000)
+    r = validate_config(_cfg(max_tokens=5000), limits=tight)
+    assert r.allowed is False
+    assert any(v.kind == "max_tokens_too_high" for v in r.violations)
+
+
+def test_validate_config_rejects_huge_context():
+    tight = Limits(max_context_tokens=1000)
+    huge_context = "word " * 5000  # ~5000 tokens, well over 1000
+    r = validate_config(_cfg(context=huge_context), limits=tight)
+    assert r.allowed is False
+    assert any(v.kind == "context_too_large" for v in r.violations)
+
+
+def test_validate_config_no_context_is_ok():
+    r = validate_config(_cfg(context=None), limits=DEFAULT_LIMITS)
+    assert r.allowed is True

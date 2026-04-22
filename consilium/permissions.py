@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from consilium.limits import Limits
+from consilium.models import JobConfig
+from consilium.tokens import count_tokens
 from consilium.usage import CurrentUsage
 
 ViolationKind = Literal[
@@ -21,6 +23,9 @@ ViolationKind = Literal[
     "daily_cap_exceeded",
     "monthly_cap_exceeded",
     "hard_stop_reached",
+    "rounds_too_many",
+    "max_tokens_too_high",
+    "context_too_large",
 ]
 
 
@@ -129,3 +134,48 @@ def check_permissions(
         violations=violations,
         warnings=warnings,
     )
+
+
+def validate_config(config: JobConfig, *, limits: Limits) -> PermissionResult:
+    """Structural sanity check — rounds/max_tokens/context size. Runs BEFORE
+    preview (no cost estimate needed). Catches absurd configs that would
+    never have been sensible regardless of budget."""
+    violations: list[Violation] = []
+
+    if config.rounds > limits.max_rounds:
+        violations.append(
+            Violation(
+                kind="rounds_too_many",
+                message=(
+                    f"rounds={config.rounds} выше max_rounds="
+                    f"{limits.max_rounds}."
+                ),
+            )
+        )
+
+    max_mt = max(p.max_tokens for p in config.participants)
+    if max_mt > limits.max_tokens_per_response:
+        violations.append(
+            Violation(
+                kind="max_tokens_too_high",
+                message=(
+                    f"max_tokens={max_mt} выше max_tokens_per_response="
+                    f"{limits.max_tokens_per_response}."
+                ),
+            )
+        )
+
+    if config.context_block is not None:
+        ctx_tokens = count_tokens(config.context_block)
+        if ctx_tokens > limits.max_context_tokens:
+            violations.append(
+                Violation(
+                    kind="context_too_large",
+                    message=(
+                        f"context_block ≈{ctx_tokens:,} токенов превышает "
+                        f"max_context_tokens={limits.max_context_tokens:,}."
+                    ),
+                )
+            )
+
+    return PermissionResult(allowed=len(violations) == 0, violations=violations)

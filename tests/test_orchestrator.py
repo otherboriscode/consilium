@@ -478,3 +478,102 @@ async def test_run_debate_excludes_participant_when_fit_says_exclude():
     assert narrow_msgs[0].text is None
     # Spy for deepseek was never called.
     assert len(spy.captured_systems) == 0
+
+
+@pytest.mark.asyncio
+async def test_summary_is_called_once_for_shared_target(monkeypatch):
+    """When N participants all end up in fit=summary with the same
+    summary_target_tokens, Haiku must be invoked exactly once — the result is
+    shared via summary_cache in _prepare_per_participant_system."""
+    calls: list[int] = []
+
+    async def fake_summarize(*, full_text, target_tokens, registry, summarizer_model="claude-haiku-4-5"):
+        calls.append(target_tokens)
+        return f"[STUBBED SUMMARY {target_tokens}]"
+
+    import consilium.orchestrator as orch
+    monkeypatch.setattr(orch, "summarize_context", fake_summarize)
+
+    # 3 participants on deepseek-r1 (128K window) + 150K-token context → summary
+    huge_context = "x " * 150_000
+    participants = [
+        ParticipantConfig(
+            model="deepseek/deepseek-r1", role=f"r{i}", system_prompt=f"Role {i}."
+        )
+        for i in range(3)
+    ]
+    cfg = JobConfig(
+        topic="t",
+        participants=participants,
+        judge=JudgeConfig(model="claude-haiku-4-5", system_prompt="j"),
+        rounds=1,
+        context_block=huge_context,
+    )
+    registry = _FakeRegistry(
+        {
+            "deepseek/deepseek-r1": _FakeProvider(Behavior(text="ok")),
+            "claude-haiku-4-5": _FakeProvider(Behavior(text=FIXTURE_JUDGE)),
+        }
+    )
+    await run_debate(cfg, registry, job_id=1)  # type: ignore[arg-type]
+
+    assert len(calls) == 1, (
+        f"Expected summarize_context to be called exactly once "
+        f"(shared target across 3 participants), got {len(calls)}: {calls}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_summary_is_called_once_per_unique_target(monkeypatch):
+    """Two participants with different max_tokens may produce different
+    summary_targets. Each unique target must produce exactly one Haiku call."""
+    calls: list[int] = []
+
+    async def fake_summarize(*, full_text, target_tokens, registry, summarizer_model="claude-haiku-4-5"):
+        calls.append(target_tokens)
+        return f"[STUBBED {target_tokens}]"
+
+    import consilium.orchestrator as orch
+    monkeypatch.setattr(orch, "summarize_context", fake_summarize)
+
+    # In today's compute_fit, summary_target_tokens is the default (30_000)
+    # regardless of max_tokens — so two deepseeks still share ONE target. We
+    # exercise the multi-target branch by stubbing compute_fit instead.
+    from consilium.context.fit import FitDecision
+
+    def _varied_fit(*, participant, context_tokens, system_prompt_tokens, summary_target_tokens=30_000):
+        # Different target per role to force distinct cache entries.
+        if participant.role == "a":
+            return FitDecision(kind="summary", summary_target_tokens=20_000)
+        if participant.role == "b":
+            return FitDecision(kind="summary", summary_target_tokens=40_000)
+        return FitDecision(kind="full")
+
+    monkeypatch.setattr(orch, "compute_fit", _varied_fit)
+
+    huge_context = "x " * 50_000
+    cfg = JobConfig(
+        topic="t",
+        participants=[
+            ParticipantConfig(
+                model="deepseek/deepseek-r1", role="a", system_prompt="Role A."
+            ),
+            ParticipantConfig(
+                model="deepseek/deepseek-r1", role="b", system_prompt="Role B."
+            ),
+        ],
+        judge=JudgeConfig(model="claude-haiku-4-5", system_prompt="j"),
+        rounds=1,
+        context_block=huge_context,
+    )
+    registry = _FakeRegistry(
+        {
+            "deepseek/deepseek-r1": _FakeProvider(Behavior(text="ok")),
+            "claude-haiku-4-5": _FakeProvider(Behavior(text=FIXTURE_JUDGE)),
+        }
+    )
+    await run_debate(cfg, registry, job_id=1)  # type: ignore[arg-type]
+
+    assert sorted(calls) == [20_000, 40_000], (
+        f"Expected one call per unique target, got {calls}"
+    )

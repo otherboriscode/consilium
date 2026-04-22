@@ -9,16 +9,14 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict
-from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
 from consilium._judge_runner import run_judge
+from consilium._progress import ProgressCallback, safe_progress
 from consilium._round_runner import run_round
 from consilium.models import JobConfig, JobResult, ProgressEvent, RoundMessage
 from consilium.providers.registry import ProviderRegistry
 from consilium.transcript import build_transcript_for_next_round
-
-ProgressCallback = Callable[[ProgressEvent], Awaitable[None]]
 
 
 async def run_debate(
@@ -33,8 +31,10 @@ async def run_debate(
 
     all_messages: list[RoundMessage] = []
     for round_index in range(config.rounds):
-        if progress is not None:
-            await progress(ProgressEvent(kind="round_started", round_index=round_index))
+        await safe_progress(
+            progress,
+            ProgressEvent(kind="round_started", round_index=round_index),
+        )
         transcript = build_transcript_for_next_round(all_messages)
         round_messages = await run_round(
             participants=config.participants,
@@ -46,11 +46,12 @@ async def run_debate(
             progress=progress,
         )
         all_messages.extend(round_messages)
-        if progress is not None:
-            await progress(ProgressEvent(kind="round_completed", round_index=round_index))
+        await safe_progress(
+            progress,
+            ProgressEvent(kind="round_completed", round_index=round_index),
+        )
 
-    if progress is not None:
-        await progress(ProgressEvent(kind="judge_started"))
+    await safe_progress(progress, ProgressEvent(kind="judge_started"))
     full_transcript = build_transcript_for_next_round(all_messages)
     judge_result = await run_judge(
         judge_config=config.judge,
@@ -58,11 +59,14 @@ async def run_debate(
         full_transcript=full_transcript,
         registry=registry,
     )
-    if progress is not None:
-        if judge_result.error is not None and judge_result.output is None:
-            await progress(ProgressEvent(kind="judge_failed", error=judge_result.error))
-        else:
-            await progress(ProgressEvent(kind="judge_completed", error=judge_result.error))
+    if judge_result.error is not None and judge_result.output is None:
+        await safe_progress(
+            progress, ProgressEvent(kind="judge_failed", error=judge_result.error)
+        )
+    else:
+        await safe_progress(
+            progress, ProgressEvent(kind="judge_completed", error=judge_result.error)
+        )
 
     duration = time.monotonic() - t0
     completed_at = datetime.now(timezone.utc)

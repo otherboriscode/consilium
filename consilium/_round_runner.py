@@ -5,15 +5,13 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
 
+from consilium._progress import ProgressCallback, safe_progress
 from consilium.cost import estimate_cost
 from consilium.models import ParticipantConfig, ProgressEvent, RoundMessage
 from consilium.prompts import build_round_user_message
 from consilium.providers.base import CallUsage, Message, ProviderError
 from consilium.providers.registry import ProviderRegistry
-
-ProgressCallback = Callable[[ProgressEvent], Awaitable[None]]
 
 
 async def _call_one_participant(
@@ -65,15 +63,15 @@ async def _call_one_participant(
                 duration_seconds=result.duration_seconds,
                 cost_usd=cost,
             )
-            if progress is not None:
-                await progress(
-                    ProgressEvent(
-                        kind="participant_failed",
-                        round_index=round_index,
-                        role_slug=participant.role,
-                        error="empty_output",
-                    )
-                )
+            await safe_progress(
+                progress,
+                ProgressEvent(
+                    kind="participant_failed",
+                    round_index=round_index,
+                    role_slug=participant.role,
+                    error="empty_output",
+                ),
+            )
             return msg
 
         # Truncated output: text present but provider hit max_tokens.
@@ -87,15 +85,15 @@ async def _call_one_participant(
                 duration_seconds=result.duration_seconds,
                 cost_usd=cost,
             )
-            if progress is not None:
-                await progress(
-                    ProgressEvent(
-                        kind="participant_completed",
-                        round_index=round_index,
-                        role_slug=participant.role,
-                        error="truncated",
-                    )
-                )
+            await safe_progress(
+                progress,
+                ProgressEvent(
+                    kind="participant_completed",
+                    round_index=round_index,
+                    role_slug=participant.role,
+                    error="truncated",
+                ),
+            )
             return msg
 
         msg = RoundMessage(
@@ -107,14 +105,14 @@ async def _call_one_participant(
             duration_seconds=result.duration_seconds,
             cost_usd=cost,
         )
-        if progress is not None:
-            await progress(
-                ProgressEvent(
-                    kind="participant_completed",
-                    round_index=round_index,
-                    role_slug=participant.role,
-                )
-            )
+        await safe_progress(
+            progress,
+            ProgressEvent(
+                kind="participant_completed",
+                round_index=round_index,
+                role_slug=participant.role,
+            ),
+        )
         return msg
     except asyncio.TimeoutError:
         msg = RoundMessage(
@@ -126,15 +124,15 @@ async def _call_one_participant(
             duration_seconds=participant.timeout_seconds,
             cost_usd=0.0,
         )
-        if progress is not None:
-            await progress(
-                ProgressEvent(
-                    kind="participant_failed",
-                    round_index=round_index,
-                    role_slug=participant.role,
-                    error="timeout",
-                )
-            )
+        await safe_progress(
+            progress,
+            ProgressEvent(
+                kind="participant_failed",
+                round_index=round_index,
+                role_slug=participant.role,
+                error="timeout",
+            ),
+        )
         return msg
     except ProviderError as e:
         msg = RoundMessage(
@@ -146,15 +144,15 @@ async def _call_one_participant(
             duration_seconds=0.0,
             cost_usd=0.0,
         )
-        if progress is not None:
-            await progress(
-                ProgressEvent(
-                    kind="participant_failed",
-                    round_index=round_index,
-                    role_slug=participant.role,
-                    error=e.kind,
-                )
-            )
+        await safe_progress(
+            progress,
+            ProgressEvent(
+                kind="participant_failed",
+                round_index=round_index,
+                role_slug=participant.role,
+                error=e.kind,
+            ),
+        )
         return msg
 
 

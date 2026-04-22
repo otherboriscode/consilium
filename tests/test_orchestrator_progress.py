@@ -176,3 +176,25 @@ async def test_progress_emits_judge_failed_on_judge_timeout():
     judge_failed = [e for e in events if e.kind == "judge_failed"]
     assert len(judge_failed) == 1
     assert judge_failed[0].error == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_progress_callback_exception_does_not_stop_debate(caplog):
+    """If the progress callback raises, the debate should complete anyway;
+    exceptions are logged, not propagated."""
+    import logging
+    caplog.set_level(logging.ERROR)
+
+    async def bad_callback(event: ProgressEvent) -> None:
+        raise RuntimeError("UI disconnected")
+
+    registry = _FakeRegistry(
+        {
+            "claude-haiku-4-5": _FakeProvider(Behavior(text=FIXTURE_JUDGE)),
+            "openai/gpt-5": _FakeProvider(Behavior(text="A")),
+            "google/gemini-2.5-pro": _FakeProvider(Behavior(text="B")),
+        }
+    )
+    result = await run_debate(_basic_cfg(rounds=1), registry, job_id=42, progress=bad_callback)  # type: ignore[arg-type]
+    assert result.judge is not None  # debate completed
+    assert any("progress callback failed" in rec.message.lower() for rec in caplog.records)

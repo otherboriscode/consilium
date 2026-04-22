@@ -20,6 +20,7 @@ import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from consilium.models import JobResult
 from consilium.transcript import format_full_markdown
@@ -56,6 +57,16 @@ class JobSummary:
     duration_seconds: float
     total_cost_usd: float
     judge_truncated: bool
+
+
+StatsGroupBy = Literal["model", "template", "project"]
+
+
+@dataclass(frozen=True)
+class StatsRow:
+    key: str | None  # None only possible for group_by="project" with NULL projects
+    n_jobs: int
+    total_cost_usd: float
 
 
 def _row_to_summary(row: sqlite3.Row) -> JobSummary:
@@ -220,6 +231,54 @@ class Archive:
         with self._connect() as conn:
             rows = conn.execute(" ".join(sql), params).fetchall()
         return [_row_to_summary(r) for r in rows]
+
+    def get_stats(self, *, group_by: StatsGroupBy) -> list[StatsRow]:
+        """Aggregated counts and total cost.
+
+        - group_by="model":    joins via job_costs; one row per model touched.
+        - group_by="template": one row per template_name.
+        - group_by="project":  one row per non-NULL project (NULL is dropped).
+        """
+        if group_by == "model":
+            sql = """
+                SELECT jc.model AS key,
+                       COUNT(DISTINCT jc.job_id) AS n_jobs,
+                       SUM(jc.cost_usd) AS total_cost
+                FROM job_costs jc
+                GROUP BY jc.model
+                ORDER BY total_cost DESC
+            """
+        elif group_by == "template":
+            sql = """
+                SELECT template_name AS key,
+                       COUNT(*) AS n_jobs,
+                       SUM(total_cost_usd) AS total_cost
+                FROM jobs
+                GROUP BY template_name
+                ORDER BY total_cost DESC
+            """
+        elif group_by == "project":
+            sql = """
+                SELECT project AS key,
+                       COUNT(*) AS n_jobs,
+                       SUM(total_cost_usd) AS total_cost
+                FROM jobs
+                WHERE project IS NOT NULL
+                GROUP BY project
+                ORDER BY total_cost DESC
+            """
+        else:
+            raise ValueError(f"group_by must be model/template/project, got {group_by!r}")
+        with self._connect() as conn:
+            rows = conn.execute(sql).fetchall()
+        return [
+            StatsRow(
+                key=r["key"],
+                n_jobs=r["n_jobs"],
+                total_cost_usd=r["total_cost"] or 0.0,
+            )
+            for r in rows
+        ]
 
     def search(self, query: str, *, limit: int = 20) -> list[JobSummary]:
         """Full-text search across topic/project/tldr/recommendation/transcript.

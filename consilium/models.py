@@ -50,6 +50,10 @@ class JobConfig(BaseModel):
     rounds: int = Field(default=2, ge=1, le=4)
     template_name: str = "default"
     template_version: str = "1.0"
+    # Optional user-supplied project tag. Used by the archive layer to group
+    # runs in stats (`stats --by-project`). No validation — user decides the
+    # grouping granularity.
+    project: str | None = None
     # Optional shared context injected into each participant's system prompt.
     # None = no context. String = raw assembled context block (see
     # consilium.context.assembly.assemble_context_block).

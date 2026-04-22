@@ -188,3 +188,26 @@ def test_job_result_json_roundtrip():
     assert roundtrip.judge is not None
     assert roundtrip.judge.scores == {"architect": 3}
     assert roundtrip.started_at == original.started_at
+
+
+def test_job_config_accepts_optional_project():
+    cfg = JobConfig(
+        topic="t",
+        participants=[
+            ParticipantConfig(model="claude-opus-4-7", role="r", system_prompt="s")
+        ],
+        judge=JudgeConfig(model="claude-haiku-4-5", system_prompt="j"),
+        project="tanaa-ubud",
+    )
+    assert cfg.project == "tanaa-ubud"
+
+
+def test_job_config_project_defaults_to_none():
+    cfg = JobConfig(
+        topic="t",
+        participants=[
+            ParticipantConfig(model="claude-opus-4-7", role="r", system_prompt="s")
+        ],
+        judge=JudgeConfig(model="claude-haiku-4-5", system_prompt="j"),
+    )
+    assert cfg.project is None

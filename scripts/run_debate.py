@@ -23,12 +23,15 @@ from consilium.archive import Archive  # noqa: E402
 from consilium.context.assembly import assemble_context_block  # noqa: E402
 from consilium.context.pack import load_pack  # noqa: E402
 from consilium.context.preprocessors import preprocess_file  # noqa: E402
+from consilium.limits import load_limits  # noqa: E402
 from consilium.models import ProgressEvent  # noqa: E402
 from consilium.orchestrator import run_debate  # noqa: E402
+from consilium.permissions import check_permissions, validate_config  # noqa: E402
 from consilium.preview import build_preview  # noqa: E402
 from consilium.providers.registry import ProviderRegistry  # noqa: E402
 from consilium.templates import load_template  # noqa: E402
 from consilium.transcript import format_full_markdown  # noqa: E402
+from consilium.usage import compute_usage  # noqa: E402
 from consilium.utils.slug import slugify as _slugify  # noqa: E402
 from scripts._jobid import next_job_id  # noqa: E402
 
@@ -97,6 +100,11 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Дополнительно сохранить копию в ./consilium/ рядом с текущим каталогом.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Обойти soft-caps лимитов (per-job/daily/monthly). Hard-stop не обходится.",
+    )
     return parser.parse_args()
 
 
@@ -140,8 +148,42 @@ async def main() -> None:
     if context_block is not None:
         config = config.model_copy(update={"context_block": context_block})
 
+    # Pre-flight: structural sanity (абсурдные rounds/max_tokens/context).
+    limits = load_limits()
+    struct = validate_config(config, limits=limits)
+    if not struct.allowed:
+        for v in struct.violations:
+            print(f"⛔ {v.message}", file=sys.stderr)
+        sys.exit(2)
+
     preview = build_preview(config, context_block=context_block)
     print(preview.text, file=sys.stderr)
+
+    # Pre-flight: денежный контроль.
+    archive_for_usage = Archive()
+    usage = compute_usage(archive_for_usage)
+    perm = check_permissions(
+        estimate_usd=preview.estimated_cost_usd,
+        usage=usage,
+        limits=limits,
+        force=args.force,
+    )
+    print(
+        f"\n💰 Месяц: ${usage.month_usd:.2f} / ${limits.max_cost_per_month_usd:.0f} "
+        f"(hard-stop ${limits.hard_stop_per_month_usd:.0f})",
+        file=sys.stderr,
+    )
+    for w in perm.warnings:
+        print(f"  {w.message}", file=sys.stderr)
+
+    if not perm.allowed:
+        print("\n⛔ Запуск заблокирован:", file=sys.stderr)
+        for v in perm.violations:
+            print(f"  • {v.message}", file=sys.stderr)
+        sys.exit(3)
+
+    if args.force:
+        print("⚠️  --force: soft-caps обойдены осознанно", file=sys.stderr)
 
     if not args.yes:
         print("", file=sys.stderr)

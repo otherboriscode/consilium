@@ -42,6 +42,37 @@ class SavedJob:
     json_path: Path
 
 
+@dataclass(frozen=True)
+class JobSummary:
+    """Lightweight summary for list views — no JSON loaded from disk."""
+
+    job_id: int
+    topic: str
+    project: str | None
+    template_name: str
+    template_version: str
+    rounds: int
+    started_at: str  # ISO 8601
+    duration_seconds: float
+    total_cost_usd: float
+    judge_truncated: bool
+
+
+def _row_to_summary(row: sqlite3.Row) -> JobSummary:
+    return JobSummary(
+        job_id=row["job_id"],
+        topic=row["topic"],
+        project=row["project"],
+        template_name=row["template_name"],
+        template_version=row["template_version"],
+        rounds=row["rounds"],
+        started_at=row["started_at"],
+        duration_seconds=row["duration_seconds"],
+        total_cost_usd=row["total_cost_usd"],
+        judge_truncated=bool(row["judge_truncated"]),
+    )
+
+
 def _default_root() -> Path:
     base = Path(
         os.environ.get(
@@ -166,6 +197,29 @@ class Archive:
             conn.commit()
 
         return SavedJob(job_id=result.job_id, md_path=md_path, json_path=json_path)
+
+    def list_jobs(
+        self,
+        *,
+        limit: int = 50,
+        project: str | None = None,
+        template: str | None = None,
+    ) -> list[JobSummary]:
+        """Latest jobs first (by `created_at`). Optional filters by project
+        and/or template. Uses SQLite only — no JSON reads."""
+        sql = ["SELECT * FROM jobs WHERE 1=1"]
+        params: list[object] = []
+        if project is not None:
+            sql.append("AND project = ?")
+            params.append(project)
+        if template is not None:
+            sql.append("AND template_name = ?")
+            params.append(template)
+        sql.append("ORDER BY created_at DESC, job_id DESC LIMIT ?")
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(" ".join(sql), params).fetchall()
+        return [_row_to_summary(r) for r in rows]
 
     def load_job(self, job_id: int) -> JobResult:
         """Rehydrate a JobResult from its JSON file. JSON is the source of truth —

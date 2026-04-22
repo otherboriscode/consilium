@@ -114,10 +114,12 @@ class Archive:
     it idempotent.
     """
 
-    def __init__(self, root: Path | None = None) -> None:
+    def __init__(self, root: Path | None = None, *, auto_init: bool = True) -> None:
         self.root = root or _default_root()
         self.root.mkdir(parents=True, exist_ok=True)
         self.db_path = self.root / "archive.sqlite"
+        if auto_init:
+            self.init_schema()
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)

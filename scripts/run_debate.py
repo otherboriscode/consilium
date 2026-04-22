@@ -179,7 +179,6 @@ async def main() -> None:
     out_paths: list[Path] = []
     if not args.no_archive:
         archive = Archive()
-        archive.init_schema()
         saved = archive.save_job(result)
         out_paths.append(saved.md_path)
 

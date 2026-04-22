@@ -130,3 +130,61 @@ def test_judge_output_clamps_out_of_range_scores():
         scores={"architect": 7, "marketer": -1, "analyst": 2},
     )
     assert j.scores == {"architect": 3, "marketer": 0, "analyst": 2}
+
+
+def test_job_result_json_roundtrip():
+    """Preparing for Phase 4 (archive): JobResult must serialize to JSON and
+    deserialize back to an equal object. Catches any dataclass/pydantic friction
+    early."""
+    cfg = JobConfig(
+        topic="Roundtrip topic",
+        participants=[
+            ParticipantConfig(model="claude-opus-4-7", role="architect", system_prompt="s")
+        ],
+        judge=JudgeConfig(model="claude-haiku-4-5", system_prompt="j"),
+    )
+    msg = RoundMessage(
+        round_index=0,
+        role_slug="architect",
+        text="some position",
+        error=None,
+        usage=CallUsage(input_tokens=100, output_tokens=50, cache_read_tokens=10),
+        duration_seconds=1.23,
+        cost_usd=0.0042,
+    )
+    judge_out = JudgeOutput(
+        raw_markdown="# TL;DR\nfull",
+        tldr="full",
+        consensus=["a"],
+        disagreements=["b"],
+        unique_contributions={"architect": "x"},
+        blind_spots=["c"],
+        recommendation="ship",
+        scores={"architect": 3},
+    )
+    original = JobResult(
+        job_id=999,
+        config=cfg,
+        messages=[msg],
+        judge=judge_out,
+        judge_truncated=False,
+        duration_seconds=12.3,
+        total_cost_usd=0.0042,
+        cost_breakdown={"claude-opus-4-7": 0.0042},
+        started_at=datetime(2026, 4, 22, 12, 0, tzinfo=timezone.utc),
+        completed_at=datetime(2026, 4, 22, 12, 0, 12, tzinfo=timezone.utc),
+    )
+    data = original.model_dump(mode="json")
+
+    # Re-hydrate through JSON string to guarantee no in-memory references leak.
+    import json as _json
+    roundtrip = JobResult.model_validate(_json.loads(_json.dumps(data)))
+
+    assert roundtrip.job_id == original.job_id
+    assert roundtrip.config.topic == original.config.topic
+    assert roundtrip.messages[0].text == "some position"
+    assert roundtrip.messages[0].usage.input_tokens == 100
+    assert roundtrip.messages[0].usage.cache_read_tokens == 10
+    assert roundtrip.judge is not None
+    assert roundtrip.judge.scores == {"architect": 3}
+    assert roundtrip.started_at == original.started_at

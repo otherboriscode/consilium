@@ -79,6 +79,7 @@ async def run_debate(
         config=config,
         messages=all_messages,
         judge=judge_result.output,
+        judge_truncated=judge_result.truncated,
         duration_seconds=duration,
         total_cost_usd=sum(cost_breakdown.values()),
         cost_breakdown=dict(cost_breakdown),

@@ -39,11 +39,11 @@ _JUDGE_PROMPT = """\
 
 
 def build_default_council(topic: str) -> JobConfig:
-    # Per-model max_tokens: reasoning models (gpt-5, gemini-2.5-pro, deepseek-r1,
-    # grok-4) burn hidden tokens on thinking before emitting visible output. The
-    # ParticipantConfig default of 1200 is fine for non-reasoning Claude models
-    # but leaves reasoning models with zero or truncated output. Budgets below
-    # are calibrated on the first real debate (2026-04-21).
+    # Per-model max_tokens — heavy-reasoning models (gpt-5, gemini-2.5-pro,
+    # grok-4) need ~6000 to emit a full 500-700 word answer; moderate-reasoning
+    # models (Opus without deep, deepseek-r1) need ~3500. Calibrated from the
+    # first real debate (2026-04-21) where 1200-4000 left marketer empty and
+    # analyst truncated mid-sentence.
     return JobConfig(
         topic=topic,
         participants=[
@@ -51,31 +51,31 @@ def build_default_council(topic: str) -> JobConfig:
                 model="claude-opus-4-7",
                 role="architect",
                 system_prompt=_ARCHITECT_PROMPT,
-                max_tokens=2500,
+                max_tokens=3500,
             ),
             ParticipantConfig(
                 model="openai/gpt-5",
                 role="marketer",
                 system_prompt=_MARKETER_PROMPT,
-                max_tokens=4000,
+                max_tokens=6000,
             ),
             ParticipantConfig(
                 model="google/gemini-2.5-pro",
                 role="analyst",
                 system_prompt=_ANALYST_PROMPT,
-                max_tokens=4000,
+                max_tokens=6000,
             ),
             ParticipantConfig(
                 model="deepseek/deepseek-r1",
                 role="engineer",
                 system_prompt=_ENGINEER_PROMPT,
-                max_tokens=3000,
+                max_tokens=3500,
             ),
             ParticipantConfig(
                 model="x-ai/grok-4",
                 role="devil_advocate",
                 system_prompt=_DEVIL_ADVOCATE_PROMPT,
-                max_tokens=3000,
+                max_tokens=6000,
             ),
         ],
         judge=JudgeConfig(model="claude-haiku-4-5", system_prompt=_JUDGE_PROMPT),

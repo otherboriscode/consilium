@@ -41,11 +41,10 @@ def test_default_council_reasoning_models_have_adequate_max_tokens():
     """
     cfg = build_default_council(topic="t")
     by_role = {p.role: p for p in cfg.participants}
-    # Reasoning-heavy models need ≥3000 max_tokens to output a 400-800 word answer.
-    assert by_role["marketer"].max_tokens >= 4000
-    assert by_role["analyst"].max_tokens >= 4000
-    assert by_role["engineer"].max_tokens >= 3000
-    assert by_role["devil_advocate"].max_tokens >= 3000
-    # Opus is not a reasoning model by default (deep=False) but benefits from
-    # room for a full structured essay.
-    assert by_role["architect"].max_tokens >= 2000
+    # Heavy-reasoning models (gpt-5, gemini-2.5-pro, grok-4) need ≥6000.
+    assert by_role["marketer"].max_tokens >= 6000
+    assert by_role["analyst"].max_tokens >= 6000
+    assert by_role["devil_advocate"].max_tokens >= 6000
+    # Moderate reasoning (Opus non-deep, deepseek-r1) — 3500.
+    assert by_role["architect"].max_tokens >= 3500
+    assert by_role["engineer"].max_tokens >= 3500

@@ -25,6 +25,7 @@ class JudgeRunResult:
     cost_usd: float
     duration_seconds: float
     error: str | None = None  # "timeout" | ProviderError.kind | "parse_error"
+    truncated: bool = False  # True if provider hit max_tokens mid-output
 
 
 async def run_judge(
@@ -68,6 +69,7 @@ async def run_judge(
         cache_read_tokens=result.usage.cache_read_tokens,
         cache_write_tokens=result.usage.cache_write_tokens,
     )
+    truncated = result.finish_reason in ("length", "max_tokens")
 
     try:
         output = parse_judge_markdown(result.text)
@@ -88,6 +90,7 @@ async def run_judge(
             cost_usd=cost,
             duration_seconds=result.duration_seconds,
             error="parse_error",
+            truncated=truncated,
         )
 
     return JudgeRunResult(
@@ -95,4 +98,5 @@ async def run_judge(
         cost_usd=cost,
         duration_seconds=result.duration_seconds,
         error=None,
+        truncated=truncated,
     )

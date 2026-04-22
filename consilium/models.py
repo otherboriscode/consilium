@@ -8,7 +8,14 @@ from pydantic import BaseModel, Field, model_validator
 from consilium.providers.base import CallUsage
 
 ErrorKind = Literal[
-    "timeout", "http_4xx", "http_5xx", "network", "content_policy", "other"
+    "timeout",
+    "http_4xx",
+    "http_5xx",
+    "network",
+    "content_policy",
+    "other",
+    "empty_output",
+    "truncated",
 ]
 
 
@@ -17,19 +24,21 @@ class ParticipantConfig(BaseModel):
     role: str = Field(..., min_length=1, max_length=50)
     system_prompt: str = Field(..., min_length=1)
     deep: bool = False
-    # FIXME(phase3): default=1200 is too low for reasoning models (gpt-5,
-    # gemini-2.5-pro, deepseek-r1, grok-4) — hidden reasoning tokens eat the
-    # budget and visible output comes back empty or truncated. When the YAML
-    # template loader replaces default_council.py, consider raising this default
-    # to 2500 and making it per-role in templates.
-    max_tokens: int = Field(default=1200, ge=100, le=16_000)
+    # Reasoning models (gpt-5, gemini-2.5-pro, deepseek-r1, grok-4) burn hidden
+    # tokens on thinking before visible output. 2500 is a sane default for
+    # non-reasoning Claude models; reasoning roles should be overridden per
+    # participant (see default_council.py).
+    max_tokens: int = Field(default=2500, ge=100, le=16_000)
     timeout_seconds: float = Field(default=300.0, ge=10, le=10_800)
 
 
 class JudgeConfig(BaseModel):
     model: str
     system_prompt: str = Field(..., min_length=1)
-    max_tokens: int = Field(default=4000, ge=500, le=16_000)
+    # Judge emits a structured markdown with 7 sections plus per-participant
+    # attribution — 4000 is not enough in practice and leads to mid-section
+    # truncation. 8000 is the safe floor.
+    max_tokens: int = Field(default=8000, ge=500, le=16_000)
     timeout_seconds: float = Field(default=600.0, ge=10, le=10_800)
 
 
@@ -59,9 +68,14 @@ class RoundMessage(BaseModel):
     cost_usd: float
 
     @model_validator(mode="after")
-    def _text_xor_error(self) -> RoundMessage:
-        if (self.text is None) == (self.error is None):
-            raise ValueError("RoundMessage must have exactly one of text or error")
+    def _valid_state(self) -> RoundMessage:
+        # Valid states:
+        #   - text present, no error (normal success)
+        #   - no text, error present (failure: timeout, empty_output, http_*, ...)
+        #   - text present AND error="truncated" (partial success — we keep
+        #     whatever the model did emit before hitting max_tokens)
+        if self.text is None and self.error is None:
+            raise ValueError("RoundMessage must have text or error (or both)")
         return self
 
     model_config = {"arbitrary_types_allowed": True}
@@ -101,6 +115,7 @@ class JobResult(BaseModel):
     config: JobConfig
     messages: list[RoundMessage]
     judge: JudgeOutput | None  # None if judge failed
+    judge_truncated: bool = False  # True if judge hit max_tokens mid-output
     duration_seconds: float
     total_cost_usd: float
     cost_breakdown: dict[str, float]

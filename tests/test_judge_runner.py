@@ -139,3 +139,31 @@ async def test_run_judge_provider_error_returns_none_output():
     assert res.output is None
     assert res.error == "http_5xx"
     assert res.cost_usd == 0.0
+
+
+@pytest.mark.asyncio
+async def test_run_judge_truncated_sets_flag():
+    """Judge hit max_tokens mid-output. We still return the partial parsed
+    content, but truncated=True signals the caller."""
+    class _TruncProvider(BaseProvider):
+        name = "trunc"
+        async def call(self, **kwargs):
+            return CallResult(
+                text=FIXTURE,  # fixture is complete markdown; finish_reason simulates truncation
+                usage=CallUsage(input_tokens=500, output_tokens=7500),
+                model=kwargs["model"],
+                finish_reason="length",
+                duration_seconds=0.0,
+            )
+
+    registry = _FakeRegistry(_TruncProvider())
+    cfg = JudgeConfig(model="claude-haiku-4-5", system_prompt="j")
+    res = await run_judge(
+        judge_config=cfg,
+        topic="T",
+        full_transcript="transcript",
+        registry=registry,  # type: ignore[arg-type]
+    )
+    assert res.truncated is True
+    assert res.output is not None
+    assert res.error is None  # parser still succeeded on the fixture

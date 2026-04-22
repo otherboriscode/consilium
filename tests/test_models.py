@@ -19,7 +19,7 @@ def test_participant_config_minimum():
         system_prompt="You are an architect.",
     )
     assert p.deep is False
-    assert p.max_tokens == 1200
+    assert p.max_tokens == 2500
     assert p.timeout_seconds == 300
 
 

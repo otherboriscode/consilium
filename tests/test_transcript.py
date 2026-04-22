@@ -91,3 +91,38 @@ def test_format_full_markdown_has_frontmatter_and_body():
     assert "# Раунд 0" in md
     assert "# Синтез" in md or "# TL;DR" in md
     assert "RAW" in md
+
+
+def test_format_full_markdown_shows_judge_truncation_warning():
+    cfg = JobConfig(
+        topic="T",
+        participants=[
+            ParticipantConfig(model="claude-opus-4-7", role="architect", system_prompt="s")
+        ],
+        judge=JudgeConfig(model="claude-haiku-4-5", system_prompt="j"),
+    )
+    judge = JudgeOutput(
+        raw_markdown="# TL;DR\nPartial content",
+        tldr="Partial content",
+        consensus=[],
+        disagreements=[],
+        unique_contributions={},
+        blind_spots=[],
+        recommendation="",
+        scores={},
+    )
+    result = JobResult(
+        job_id=1,
+        config=cfg,
+        messages=[_msg(0, "architect", text="A0")],
+        judge=judge,
+        judge_truncated=True,
+        duration_seconds=1.0,
+        total_cost_usd=0.05,
+        cost_breakdown={"claude-opus-4-7": 0.05},
+        started_at=datetime(2026, 4, 22, tzinfo=timezone.utc),
+        completed_at=datetime(2026, 4, 22, tzinfo=timezone.utc),
+    )
+    md = format_full_markdown(result)
+    assert "обрезан по лимиту токенов" in md
+    assert "judge.max_tokens" in md

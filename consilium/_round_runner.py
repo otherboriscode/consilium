@@ -53,6 +53,51 @@ async def _call_one_participant(
             cache_read_tokens=result.usage.cache_read_tokens,
             cache_write_tokens=result.usage.cache_write_tokens,
         )
+
+        # Empty output: reasoning burned the whole budget, no visible text.
+        if not result.text.strip():
+            msg = RoundMessage(
+                round_index=round_index,
+                role_slug=participant.role,
+                text=None,
+                error="empty_output",
+                usage=result.usage,
+                duration_seconds=result.duration_seconds,
+                cost_usd=cost,
+            )
+            if progress is not None:
+                await progress(
+                    ProgressEvent(
+                        kind="participant_failed",
+                        round_index=round_index,
+                        role_slug=participant.role,
+                        error="empty_output",
+                    )
+                )
+            return msg
+
+        # Truncated output: text present but provider hit max_tokens.
+        if result.finish_reason in ("length", "max_tokens"):
+            msg = RoundMessage(
+                round_index=round_index,
+                role_slug=participant.role,
+                text=result.text,
+                error="truncated",
+                usage=result.usage,
+                duration_seconds=result.duration_seconds,
+                cost_usd=cost,
+            )
+            if progress is not None:
+                await progress(
+                    ProgressEvent(
+                        kind="participant_completed",
+                        round_index=round_index,
+                        role_slug=participant.role,
+                        error="truncated",
+                    )
+                )
+            return msg
+
         msg = RoundMessage(
             round_index=round_index,
             role_slug=participant.role,

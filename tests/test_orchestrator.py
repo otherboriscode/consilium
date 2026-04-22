@@ -239,3 +239,36 @@ async def test_run_debate_round_1_sees_round_0_transcript():
     assert len(round_1_messages) >= 1
     # The transcript embedded in round-1 messages should carry round-0 headers.
     assert all("# Раунд 0" in s for s in round_1_messages)
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_propagates_judge_truncated():
+    """judge_truncated flag makes it into the final JobResult."""
+    class _TruncJudge(BaseProvider):
+        name = "trunc_judge"
+        async def call(self, **kwargs):
+            return CallResult(
+                text=FIXTURE_JUDGE,
+                usage=CallUsage(input_tokens=500, output_tokens=8000),
+                model=kwargs["model"],
+                finish_reason="length",
+                duration_seconds=0.0,
+            )
+
+    cfg = JobConfig(
+        topic="t",
+        participants=[
+            ParticipantConfig(model="openai/gpt-5", role="a", system_prompt="s"),
+        ],
+        judge=JudgeConfig(model="claude-haiku-4-5", system_prompt="j"),
+        rounds=1,
+    )
+    registry = _FakeRegistry(
+        {
+            "claude-haiku-4-5": _TruncJudge(),
+            "openai/gpt-5": _FakeProvider(Behavior(text="A")),
+        }
+    )
+    result = await run_debate(cfg, registry, job_id=99)  # type: ignore[arg-type]
+    assert result.judge is not None
+    assert result.judge_truncated is True

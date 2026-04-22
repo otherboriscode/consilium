@@ -214,3 +214,60 @@ async def test_round_runner_preserves_participant_order():
         registry=registry,
     )
     assert [m.role_slug for m in msgs] == ["late_first", "fast_second"]
+
+
+@pytest.mark.asyncio
+async def test_round_runner_empty_output_returns_error():
+    """Reasoning model burned its whole max_tokens budget on thinking and returned
+    an empty visible string. Orchestrator must record error='empty_output' and
+    still attribute the cost of the burned tokens."""
+    participants = [_p("marketer", "openai/gpt-5")]
+    registry = FakeRegistry(
+        {
+            "openai/gpt-5": FakeProvider(
+                FakeBehavior(text="", usage_in=50, usage_out=4000)
+            )
+        }
+    )
+    msgs = await run_round(
+        participants=participants,
+        topic="t",
+        round_index=0,
+        total_rounds=1,
+        transcript_so_far="",
+        registry=registry,
+    )
+    assert msgs[0].text is None
+    assert msgs[0].error == "empty_output"
+    # Cost reflects burned tokens, not zero (we paid for reasoning).
+    assert msgs[0].cost_usd > 0
+
+
+@pytest.mark.asyncio
+async def test_round_runner_truncated_keeps_text_and_flag():
+    """Provider emitted partial text and stopped at max_tokens. Keep what we got
+    and flag error='truncated' so the judge and the user see it."""
+    # FakeProvider default finish_reason is "stop" — we extend Behavior to set length.
+    from dataclasses import replace
+    base = FakeBehavior(text="partial content", usage_in=50, usage_out=1000)
+    # Hack: monkey-patch the fake to set finish_reason on the returned CallResult.
+    class _TruncProvider(FakeProvider):
+        async def call(self, **kwargs):
+            res = await super().call(**kwargs)
+            from dataclasses import replace as _replace
+            return _replace(res, finish_reason="length")
+
+    participants = [_p("marketer", "openai/gpt-5")]
+    registry = FakeRegistry({"openai/gpt-5": _TruncProvider(base)})
+    msgs = await run_round(
+        participants=participants,
+        topic="t",
+        round_index=0,
+        total_rounds=1,
+        transcript_so_far="",
+        registry=registry,
+    )
+    assert msgs[0].text == "partial content"
+    assert msgs[0].error == "truncated"
+    assert msgs[0].cost_usd > 0
+    _ = replace  # silence unused-import

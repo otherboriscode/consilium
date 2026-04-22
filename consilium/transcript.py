@@ -63,7 +63,14 @@ def format_full_markdown(result: JobResult) -> str:
     ]
 
     if result.judge is not None:
-        body_parts.append("# Синтез\n\n" + result.judge.raw_markdown.rstrip())
+        synthesis_parts = ["# Синтез"]
+        if result.judge_truncated:
+            synthesis_parts.append(
+                "> ⚠️ Синтез судьи обрезан по лимиту токенов. "
+                "Увеличьте `judge.max_tokens`."
+            )
+        synthesis_parts.append(result.judge.raw_markdown.rstrip())
+        body_parts.append("\n\n".join(synthesis_parts))
     else:
         body_parts.append("# Синтез\n\n_[судья не ответил]_")
 

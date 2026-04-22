@@ -221,6 +221,31 @@ class Archive:
             rows = conn.execute(" ".join(sql), params).fetchall()
         return [_row_to_summary(r) for r in rows]
 
+    def search(self, query: str, *, limit: int = 20) -> list[JobSummary]:
+        """Full-text search across topic/project/tldr/recommendation/transcript.
+        Ranked by BM25, newest ties first.
+
+        Note: the tokenizer is `unicode61` — it handles Cyrillic but does not
+        stem Russian morphology. Use prefix matching (`концепц*`) if you need
+        to catch declensions.
+        """
+        q = query.strip()
+        if not q:
+            return []
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT j.* FROM jobs j
+                JOIN jobs_fts_content c ON c.job_id = j.job_id
+                JOIN jobs_fts f ON f.rowid = c.id
+                WHERE jobs_fts MATCH ?
+                ORDER BY bm25(jobs_fts), j.created_at DESC
+                LIMIT ?
+                """,
+                (q, limit),
+            ).fetchall()
+        return [_row_to_summary(r) for r in rows]
+
     def load_job(self, job_id: int) -> JobResult:
         """Rehydrate a JobResult from its JSON file. JSON is the source of truth —
         SQLite only stores the pointer. Raises KeyError if `job_id` unknown."""

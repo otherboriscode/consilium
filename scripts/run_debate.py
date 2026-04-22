@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -30,15 +29,8 @@ from consilium.preview import build_preview  # noqa: E402
 from consilium.providers.registry import ProviderRegistry  # noqa: E402
 from consilium.templates import load_template  # noqa: E402
 from consilium.transcript import format_full_markdown  # noqa: E402
+from consilium.utils.slug import slugify as _slugify  # noqa: E402
 from scripts._jobid import next_job_id  # noqa: E402
-
-
-_SLUG_RE = re.compile(r"[^a-z0-9]+")
-
-
-def _slugify(topic: str, *, max_len: int = 40) -> str:
-    slug = _SLUG_RE.sub("-", topic.lower()).strip("-")
-    return slug[:max_len] or "debate"
 
 
 async def _print_progress(event: ProgressEvent) -> None:

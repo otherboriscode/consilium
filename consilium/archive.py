@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +24,7 @@ from typing import Literal
 
 from consilium.models import JobResult
 from consilium.transcript import format_full_markdown
+from consilium.utils.slug import slugify as _slugify
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,8 @@ _SCHEMA_PATH = Path(__file__).parent / "archive_schema.sql"
 # Any of these in a user query triggers FTS5 parser (phrase/prefix/operator).
 # `*` is intentionally NOT here — it's a valid and supported prefix wildcard.
 _FTS_PARSER_TRIGGERS = frozenset('"():+')
+
+
 
 
 def _escape_fts_query(query: str) -> str:
@@ -50,15 +52,6 @@ def _escape_fts_query(query: str) -> str:
     if any(c in q for c in _FTS_PARSER_TRIGGERS):
         return '"' + q.replace('"', '""') + '"'
     return q
-
-# Keep cyrillic + latin alphanumerics; collapse everything else to dashes.
-_SLUG_RE = re.compile(r"[^a-z0-9а-я]+", re.IGNORECASE)
-
-
-def _slugify(topic: str, *, max_len: int = 40) -> str:
-    slug = _SLUG_RE.sub("-", topic.lower()).strip("-")
-    return slug[:max_len] or "debate"
-
 
 @dataclass(frozen=True)
 class SavedJob:

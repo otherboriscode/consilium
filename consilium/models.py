@@ -16,6 +16,7 @@ ErrorKind = Literal[
     "other",
     "empty_output",
     "truncated",
+    "excluded_by_fit",
 ]
 
 
@@ -49,6 +50,10 @@ class JobConfig(BaseModel):
     rounds: int = Field(default=2, ge=1, le=4)
     template_name: str = "default"
     template_version: str = "1.0"
+    # Optional shared context injected into each participant's system prompt.
+    # None = no context. String = raw assembled context block (see
+    # consilium.context.assembly.assemble_context_block).
+    context_block: str | None = None
 
     @model_validator(mode="after")
     def _roles_unique(self) -> JobConfig:

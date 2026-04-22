@@ -332,3 +332,149 @@ async def test_orchestrator_skips_unknown_role_in_cost_breakdown(caplog):
     assert any("ghost" in rec.message for rec in caplog.records)
     # Cost breakdown has no entry for 'ghost' — only judge.
     assert "ghost" not in result.cost_breakdown
+
+
+class _SpyProvider(BaseProvider):
+    """Captures every system prompt passed to `call`."""
+    name = "spy"
+
+    def __init__(self) -> None:
+        self.captured_systems: list[str] = []
+        self.text_to_return = "ok"
+
+    async def call(
+        self,
+        *,
+        model: str,
+        system: str,
+        messages: list[Message],
+        max_tokens: int,
+        temperature: float = 0.7,
+        deep: bool = False,
+        cache_last_system_block: bool = True,
+        timeout_seconds: float = 300.0,
+    ) -> CallResult:
+        self.captured_systems.append(system)
+        return CallResult(
+            text=self.text_to_return,
+            usage=CallUsage(input_tokens=100, output_tokens=50),
+            model=model,
+            finish_reason="stop",
+            duration_seconds=0.0,
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_debate_with_context_block_injects_into_system():
+    spy = _SpyProvider()
+    judge_provider = _FakeProvider(Behavior(text=FIXTURE_JUDGE))
+    registry = _FakeRegistry(
+        {
+            "openai/gpt-5": spy,
+            "claude-haiku-4-5": judge_provider,
+        }
+    )
+    config = JobConfig(
+        topic="test",
+        participants=[
+            ParticipantConfig(model="openai/gpt-5", role="r", system_prompt="ROLE_TEXT"),
+        ],
+        judge=JudgeConfig(model="claude-haiku-4-5", system_prompt="JUDGE"),
+        rounds=1,
+        context_block="CONTEXT_TEXT",
+    )
+    await run_debate(config, registry, job_id=1)  # type: ignore[arg-type]
+    # system for the participant = "CONTEXT_TEXT\n\n---\n\nROLE_TEXT"
+    participant_sys = spy.captured_systems[0]
+    assert participant_sys.startswith("CONTEXT_TEXT")
+    assert "ROLE_TEXT" in participant_sys
+    assert "---" in participant_sys
+
+
+@pytest.mark.asyncio
+async def test_run_debate_with_context_block_cache_hit_across_rounds():
+    """System is byte-identical between rounds → cacheable."""
+    spy = _SpyProvider()
+    judge_provider = _FakeProvider(Behavior(text=FIXTURE_JUDGE))
+    registry = _FakeRegistry(
+        {
+            "openai/gpt-5": spy,
+            "claude-haiku-4-5": judge_provider,
+        }
+    )
+    config = JobConfig(
+        topic="t",
+        participants=[
+            ParticipantConfig(model="openai/gpt-5", role="r", system_prompt="RP"),
+        ],
+        judge=JudgeConfig(model="claude-haiku-4-5", system_prompt="J"),
+        rounds=2,
+        context_block="CTX",
+    )
+    await run_debate(config, registry, job_id=1)  # type: ignore[arg-type]
+    # 2 rounds → 2 participant calls captured; systems must match byte-for-byte.
+    assert len(spy.captured_systems) == 2
+    assert spy.captured_systems[0] == spy.captured_systems[1]
+
+
+@pytest.mark.asyncio
+async def test_run_debate_excludes_participant_when_fit_says_exclude():
+    """Context so large it can't fit even as summary → participant marked
+    excluded_by_fit; no API call made for them."""
+    spy = _SpyProvider()
+    judge_provider = _FakeProvider(Behavior(text=FIXTURE_JUDGE))
+    registry = _FakeRegistry(
+        {
+            "deepseek/deepseek-r1": spy,
+            "claude-haiku-4-5": judge_provider,
+            "claude-opus-4-7": _FakeProvider(Behavior(text="opus-ok")),
+        }
+    )
+    # Simulate a context that can't fit even with summary via a 200K-char
+    # context plus a huge summary_target embedded in the participant budget.
+    huge_context = "x " * 200_000  # >200K tokens
+    config = JobConfig(
+        topic="t",
+        participants=[
+            ParticipantConfig(
+                model="claude-opus-4-7",  # 1M window — will get full
+                role="big",
+                system_prompt="S",
+            ),
+            ParticipantConfig(
+                model="deepseek/deepseek-r1",  # 128K window — gets summary or exclude
+                role="narrow",
+                system_prompt="S",
+            ),
+        ],
+        judge=JudgeConfig(model="claude-haiku-4-5", system_prompt="J"),
+        rounds=1,
+        context_block=huge_context,
+    )
+    # Patch the summarizer to "fail" by returning nothing useful — but we
+    # actually want to force exclude via fit, not summary. Use a tiny custom
+    # monkeypatch: increase deepseek participant's max_tokens so summary can't fit.
+    # Easier path: since default summary_target=30K fits, we need to override.
+    # Instead, directly test the excluded path via a fake-fit stub.
+    import consilium.orchestrator as orch
+    from consilium.context.fit import FitDecision
+
+    orig_compute_fit = orch.compute_fit
+
+    def _stub_fit(*, participant, **kwargs):
+        if participant.model == "deepseek/deepseek-r1":
+            return FitDecision(kind="exclude", reason="stubbed")
+        return orig_compute_fit(participant=participant, **kwargs)
+
+    orch.compute_fit = _stub_fit  # type: ignore[assignment]
+    try:
+        result = await run_debate(config, registry, job_id=9)  # type: ignore[arg-type]
+    finally:
+        orch.compute_fit = orig_compute_fit  # type: ignore[assignment]
+
+    narrow_msgs = [m for m in result.messages if m.role_slug == "narrow"]
+    assert len(narrow_msgs) == 1
+    assert narrow_msgs[0].error == "excluded_by_fit"
+    assert narrow_msgs[0].text is None
+    # Spy for deepseek was never called.
+    assert len(spy.captured_systems) == 0

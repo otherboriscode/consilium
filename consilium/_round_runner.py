@@ -23,7 +23,35 @@ async def _call_one_participant(
     transcript_so_far: str,
     registry: ProviderRegistry,
     progress: ProgressCallback | None = None,
+    per_participant_system: dict[str, tuple[str, str | None]] | None = None,
 ) -> RoundMessage:
+    # Resolve effective system + any pre-assigned error (e.g. excluded_by_fit).
+    system_text, pre_error = (
+        per_participant_system.get(participant.role, (participant.system_prompt, None))
+        if per_participant_system is not None
+        else (participant.system_prompt, None)
+    )
+    if pre_error == "excluded_by_fit":
+        msg = RoundMessage(
+            round_index=round_index,
+            role_slug=participant.role,
+            text=None,
+            error="excluded_by_fit",
+            usage=CallUsage(input_tokens=0, output_tokens=0),
+            duration_seconds=0.0,
+            cost_usd=0.0,
+        )
+        await safe_progress(
+            progress,
+            ProgressEvent(
+                kind="participant_failed",
+                round_index=round_index,
+                role_slug=participant.role,
+                error="excluded_by_fit",
+            ),
+        )
+        return msg
+
     user_msg_text = build_round_user_message(
         topic=topic,
         round_index=round_index,
@@ -36,7 +64,7 @@ async def _call_one_participant(
         result = await asyncio.wait_for(
             provider.call(
                 model=participant.model,
-                system=participant.system_prompt,
+                system=system_text,
                 messages=[Message(role="user", content=user_msg_text)],
                 max_tokens=participant.max_tokens,
                 deep=participant.deep,
@@ -165,6 +193,7 @@ async def run_round(
     transcript_so_far: str,
     registry: ProviderRegistry,
     progress: ProgressCallback | None = None,
+    per_participant_system: dict[str, tuple[str, str | None]] | None = None,
 ) -> list[RoundMessage]:
     """Run all participants in parallel for one round. Preserves input order."""
     coros = [
@@ -176,6 +205,7 @@ async def run_round(
             transcript_so_far=transcript_so_far,
             registry=registry,
             progress=progress,
+            per_participant_system=per_participant_system,
         )
         for p in participants
     ]

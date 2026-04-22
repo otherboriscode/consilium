@@ -85,3 +85,26 @@ def test_judge_message_contains_full_transcript_and_schema():
         "Оценка вклада",
     ):
         assert header in JUDGE_OUTPUT_SCHEMA_INSTRUCTION
+
+
+def test_round1_user_message_forbids_round0_repetition():
+    msg = build_round_user_message(
+        topic="T",
+        round_index=1,
+        transcript_so_far="prev rounds",
+        participant=_p(),
+        total_rounds=2,
+    )
+    assert "не повторяй аргументы из раунда 0" in msg.lower()
+
+
+def test_round_messages_use_strict_word_limit():
+    for round_index in (0, 1, 2):
+        msg = build_round_user_message(
+            topic="T",
+            round_index=round_index,
+            transcript_so_far="x",
+            participant=_p(),
+            total_rounds=3,
+        )
+        assert "строго 500" in msg.lower()

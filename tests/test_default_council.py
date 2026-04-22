@@ -55,3 +55,15 @@ def test_default_council_prompts_forbid_h1():
     for p in cfg.participants:
         assert "не используй заголовки первого уровня" in p.system_prompt.lower() or \
                "не используй заголовки" in p.system_prompt.lower()
+
+
+def test_default_council_devil_advocate_prompt_mentions_breaking_consensus():
+    cfg = build_default_council(topic="t")
+    devil = next(p for p in cfg.participants if p.role == "devil_advocate")
+    assert "ломать консенсус" in devil.system_prompt.lower()
+    assert "новые слабости конкретно в позициях других" in devil.system_prompt.lower()
+
+
+def test_default_council_judge_prompt_caps_top_score():
+    cfg = build_default_council(topic="t")
+    assert "максимум один участник" in cfg.judge.system_prompt.lower()

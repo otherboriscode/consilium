@@ -20,6 +20,7 @@ from pathlib import Path
 # Make `scripts.` imports work when run as `python scripts/run_debate.py`.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from consilium.archive import Archive  # noqa: E402
 from consilium.context.assembly import assemble_context_block  # noqa: E402
 from consilium.context.pack import load_pack  # noqa: E402
 from consilium.context.preprocessors import preprocess_file  # noqa: E402
@@ -89,6 +90,21 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--yes", action="store_true", help="Пропустить preview-подтверждение."
     )
+    parser.add_argument(
+        "--project",
+        default=None,
+        help="Тег проекта (используется для stats --by-project).",
+    )
+    parser.add_argument(
+        "--no-archive",
+        action="store_true",
+        help="Не сохранять в архив — только локальный файл.",
+    )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Дополнительно сохранить копию в ./consilium/ рядом с текущим каталогом.",
+    )
     return parser.parse_args()
 
 
@@ -125,6 +141,8 @@ async def main() -> None:
     config = template.build_config(topic=args.topic)
     if args.rounds is not None:
         config = config.model_copy(update={"rounds": args.rounds})
+    if args.project is not None:
+        config = config.model_copy(update={"project": args.project})
 
     context_block = _load_context_block(args)
     if context_block is not None:
@@ -152,17 +170,30 @@ async def main() -> None:
     job_id = next_job_id()
     result = await run_debate(config, registry, job_id=job_id, progress=_print_progress)
 
-    out_dir = Path.cwd() / "consilium"
-    out_dir.mkdir(exist_ok=True)
-    out_path = out_dir / f"{job_id:04d}-{_slugify(args.topic)}.md"
-    out_path.write_text(format_full_markdown(result), encoding="utf-8")
-
     print(
         f"\nDone. Duration: {result.duration_seconds:.1f}s, "
         f"cost: ${result.total_cost_usd:.4f}",
         file=sys.stderr,
     )
-    print(f"Transcript: {out_path}", file=sys.stderr)
+
+    out_paths: list[Path] = []
+    if not args.no_archive:
+        archive = Archive()
+        archive.init_schema()
+        saved = archive.save_job(result)
+        out_paths.append(saved.md_path)
+
+    # Local copy: always if --no-archive (there'd be no other output otherwise),
+    # or on explicit --local.
+    if args.no_archive or args.local:
+        local_dir = Path.cwd() / "consilium"
+        local_dir.mkdir(exist_ok=True)
+        local_path = local_dir / f"{job_id:04d}-{_slugify(args.topic)}.md"
+        local_path.write_text(format_full_markdown(result), encoding="utf-8")
+        out_paths.append(local_path)
+
+    for p in out_paths:
+        print(f"Transcript: {p}", file=sys.stderr)
 
 
 if __name__ == "__main__":

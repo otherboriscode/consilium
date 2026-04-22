@@ -121,3 +121,15 @@ def test_parse_h3_subsections_in_unique_contributions():
         "architect": "space logic",
         "marketer": "naming",
     }
+
+
+def test_parse_score_with_bold_markers_and_trailing_text():
+    """Реальный формат судьи: `- **role:** **3** — обоснование...`."""
+    md = (
+        "# Оценка вклада\n"
+        "- **pragmatist:** **3** — единственный предложил проверяемую формулу\n"
+        "- **skeptic:** **2** — критическое вскрытие дилеммы\n"
+        "- **analyst:** **2** — ценный вклад количественных бенчмарков\n"
+    )
+    result = parse_judge_markdown(md)
+    assert result.scores == {"pragmatist": 3, "skeptic": 2, "analyst": 2}

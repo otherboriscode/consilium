@@ -46,7 +46,9 @@ _SECTION_HEADER = re.compile(r"^#{1,3}\s+(.+?)\s*$")  # H1/H2/H3 section boundar
 _SUBSECTION_HEADER = re.compile(r"^#{2,4}\s+(.+?)\s*$")  # H2/H3/H4 inside contributions
 _LIST_ITEM = re.compile(r"^\s*[-*•]\s+(.+?)\s*$")
 _SCORE_LINE = re.compile(
-    r"^\s*[-*•]\s*([^:]+?)\s*:\s*(-?\d+)(?:\s*/\s*\d+)?\s*$"
+    # Tolerate bold markers around role/score and trailing free-form text
+    # after the score (judges often add `— обоснование...`).
+    r"^\s*[-*•]\s*([^:]+?)\s*:\s*(-?\d+)(?:\s*/\s*\d+)?.*$"
 )
 # For contributions-section bullets: `- role: free-form text`. Matches only
 # when the text after the colon is non-numeric (scores use _SCORE_LINE instead).
@@ -127,7 +129,10 @@ def parse_judge_markdown(text: str) -> JudgeOutput:
     blind_spots = _extract_bullets(section_buffers[_SECTION_BLIND_SPOTS])
 
     scores: dict[str, int] = {}
-    for line in section_buffers[_SECTION_SCORES]:
+    for raw in section_buffers[_SECTION_SCORES]:
+        # Judges often add markdown bold (**role:** **3** — ...) around parts
+        # of a score line. Strip them before the regex to keep the pattern tight.
+        line = raw.replace("**", "").replace("__", "")
         m = _SCORE_LINE.match(line)
         if m:
             role = m.group(1).strip().strip("*").strip()

@@ -47,6 +47,10 @@ addopts = "-m 'not integration'"
 line-length = 100
 target-version = "py312"
 
+[[tool.mypy.overrides]]
+module = ["fitz", "docx", "docx.*"]
+ignore_missing_imports = true
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

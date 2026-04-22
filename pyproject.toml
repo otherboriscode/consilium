@@ -37,6 +37,7 @@ consilium = "consilium_cli.main:main"
 consilium-mcp = "consilium_mcp.server:main"
 consilium-bot = "consilium_server.bot.main:main"
 consilium-api = "consilium_server.api.main:main"
+consilium-budget = "scripts.budget:main"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -56,4 +57,10 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["consilium*", "consilium_server*", "consilium_mcp*", "consilium_cli*"]
+include = [
+    "consilium*",
+    "consilium_server*",
+    "consilium_mcp*",
+    "consilium_cli*",
+    "scripts*",
+]

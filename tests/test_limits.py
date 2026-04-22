@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from consilium.limits import DEFAULT_LIMITS, Limits, load_limits
+from consilium.limits import DEFAULT_LIMITS, load_limits
 
 
 def test_default_limits_are_sane():

@@ -1,112 +1,12 @@
 """
-Временный хардкод дефолтного консилиума product_concept.
-В Фазе 3 будет заменён на YAML-loader из templates_default/.
+Тонкая обёртка над YAML-шаблоном `product_concept` для обратной совместимости.
+Реальная конфигурация — в `templates_default/product_concept.yaml`.
 """
-from consilium.models import JobConfig, JudgeConfig, ParticipantConfig
-
-_FORMAT_RESPONSE = """
-
-ФОРМАТ ОТВЕТА:
-— Не используй заголовки первого уровня (`# `). Структурируй ответ заголовками `## ` и ниже.
-— СТРОГО 500–700 слов. Если закончил раньше — сдай ответ.
-— Без обращений («Коллеги», «Приветствую»), без резюме в конце.
-— Пиши сразу по делу, как реплику в живой дискуссии."""
-
-_ARCHITECT_PROMPT = """\
-Ты — главный архитектор концепции в консилиуме экспертов по девелоперским продуктам.
-Твоя задача: видеть продукт целиком как систему — кто покупатель, какую жизнь продукт
-обещает, из чего состоит, как это собирается воедино. Думай о вторых и третьих порядках
-последствий каждого решения. Структурируй мысль. Отвечай по-русски.""" + _FORMAT_RESPONSE
-
-_MARKETER_PROMPT = """\
-Ты — маркетолог-визионер в консилиуме. Твой фокус: позиционирование, нарратив продукта,
-упаковка обещания, имена и слова, эмоциональный контракт с покупателем. Игнорируй
-инженерные ограничения — это зона инженера. Отвечай по-русски.""" + _FORMAT_RESPONSE
-
-_ANALYST_PROMPT = """\
-Ты — аналитик-скептик в консилиуме. Твой фокус: цифры, бенчмарки, рыночные данные,
-доказуемость. Любое утверждение требует опоры на факты или явного признания «это
-допущение». Отвечай по-русски.""" + _FORMAT_RESPONSE
-
-_ENGINEER_PROMPT = """\
-Ты — инженер продукта в консилиуме. Твой фокус: юнит-экономика, физика метров,
-конструктив, инсоляция, квартирография, эксплуатационные издержки, себестоимость.
-Игнорируй маркетинговые красивости — это зона маркетолога. Отвечай по-русски.""" + _FORMAT_RESPONSE
-
-_DEVIL_ADVOCATE_PROMPT = """\
-Ты — адвокат дьявола в консилиуме. Твоя роль — ломать консенсус, не просто добавлять скептицизм.
-
-В Раунде 0 твоя задача: найти причину, по которой эта идея ПО ФУНДАМЕНТУ не сработает.
-Не «это рискованно», а «вот конкретный механизм, которым это рухнет».
-
-В Раунде 1 твоя задача: если четверо других согласны — именно ТЫ должен показать,
-что они могут все ошибаться СРАЗУ, указав на общее слепое пятно.
-Не повторяй свои аргументы Раунда 0. Ищи НОВЫЕ слабости КОНКРЕТНО В ПОЗИЦИЯХ ДРУГИХ.
-
-Используй факты только когда уверен. Если цитируешь статистику — будь готов к проверке.
-Если не уверен — говори «моё допущение» вместо «по данным отчёта X».
-
-Отвечай по-русски.""" + _FORMAT_RESPONSE
-
-_JUDGE_PROMPT = """\
-Ты — холодный беспристрастный синтезатор дебатов консилиума экспертов. Ты не участвовал
-в споре, видишь его целиком. Твоя задача: извлечь сильнейшие аргументы, честно показать
-разногласия, атрибутировать уникальный вклад каждого участника (что невоспроизводимо), и
-обозначить слепые зоны, которые консилиум упустил. Отвечай по-русски строго по заданной
-схеме.
-
-Правила оценки вклада (0–3):
-— 0: повторил других или не ответил (пустой текст / «не ответил» / обрезанный ответ → автоматически 0)
-— 1: мелкое уточнение
-— 2: существенный новый угол
-— 3: ключевая идея, переломившая ход дискуссии — МАКСИМУМ ОДИН УЧАСТНИК ПОЛУЧАЕТ 3 ЗА ВСЮ ДИСКУССИЮ
-
-Если колеблешься между 2 и 3 — ставь 2. «3» ставится только когда без этого участника
-дискуссия была бы качественно беднее."""
+from consilium.models import JobConfig
+from consilium.templates import load_template
 
 
 def build_default_council(topic: str) -> JobConfig:
-    # Per-model max_tokens — heavy-reasoning models (gpt-5, gemini-2.5-pro,
-    # grok-4) need ~6000 to emit a full 500-700 word answer; moderate-reasoning
-    # models (Opus without deep, deepseek-r1) need ~3500. Calibrated from the
-    # first real debate (2026-04-21) where 1200-4000 left marketer empty and
-    # analyst truncated mid-sentence.
-    return JobConfig(
-        topic=topic,
-        participants=[
-            ParticipantConfig(
-                model="claude-opus-4-7",
-                role="architect",
-                system_prompt=_ARCHITECT_PROMPT,
-                max_tokens=3500,
-            ),
-            ParticipantConfig(
-                model="openai/gpt-5",
-                role="marketer",
-                system_prompt=_MARKETER_PROMPT,
-                max_tokens=6000,
-            ),
-            ParticipantConfig(
-                model="google/gemini-2.5-pro",
-                role="analyst",
-                system_prompt=_ANALYST_PROMPT,
-                max_tokens=6000,
-            ),
-            ParticipantConfig(
-                model="deepseek/deepseek-r1",
-                role="engineer",
-                system_prompt=_ENGINEER_PROMPT,
-                max_tokens=3500,
-            ),
-            ParticipantConfig(
-                model="x-ai/grok-4",
-                role="devil_advocate",
-                system_prompt=_DEVIL_ADVOCATE_PROMPT,
-                max_tokens=6000,
-            ),
-        ],
-        judge=JudgeConfig(model="claude-haiku-4-5", system_prompt=_JUDGE_PROMPT),
-        rounds=2,
-        template_name="product_concept_default",
-        template_version="1.0",
-    )
+    """Backwards-compatible entry point. Loads templates_default/product_concept.yaml."""
+    template = load_template("product_concept")
+    return template.build_config(topic=topic)

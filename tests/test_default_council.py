@@ -67,3 +67,16 @@ def test_default_council_devil_advocate_prompt_mentions_breaking_consensus():
 def test_default_council_judge_prompt_caps_top_score():
     cfg = build_default_council(topic="t")
     assert "максимум один участник" in cfg.judge.system_prompt.lower()
+
+
+def test_default_council_loads_from_yaml():
+    """build_default_council реально читает templates_default/product_concept.yaml."""
+    cfg = build_default_council(topic="t")
+    assert cfg.template_name == "product_concept"
+    assert len(cfg.template_version) >= 8  # hash, not '1.0'
+
+
+def test_default_council_yaml_preserves_all_roles():
+    cfg = build_default_council(topic="t")
+    roles = {p.role for p in cfg.participants}
+    assert roles == {"architect", "marketer", "analyst", "engineer", "devil_advocate"}

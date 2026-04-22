@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from consilium.context.pack import ContextPack, create_pack, list_packs, load_pack
 
 

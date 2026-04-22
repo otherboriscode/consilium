@@ -63,3 +63,36 @@ def test_search_limit(tmp_path):
         archive.save_job(_with_topic(make_result(job_id=i), "commonword"))
     rows = archive.search("commonword", limit=3)
     assert len(rows) == 3
+
+
+def test_search_with_double_quote_does_not_crash(tmp_path):
+    archive = Archive(root=tmp_path / "arch")
+    archive.save_job(make_result(job_id=1))
+    # Must not raise, even if the query looks like an unterminated FTS phrase.
+    result = archive.search('foo"bar')
+    assert isinstance(result, list)
+
+
+def test_search_with_fts_operator_words_works(tmp_path):
+    archive = Archive(root=tmp_path / "arch")
+    archive.save_job(
+        _with_topic(make_result(job_id=1), "money AND cash in the budget")
+    )
+    # `AND` is an FTS5 operator; escaped query treats it as text.
+    result = archive.search("AND cash")
+    assert isinstance(result, list)
+
+
+def test_search_with_parens_does_not_crash(tmp_path):
+    archive = Archive(root=tmp_path / "arch")
+    archive.save_job(make_result(job_id=1))
+    assert archive.search("(foo") == []
+    assert isinstance(archive.search("foo)"), list)
+
+
+def test_search_prefix_wildcard_still_works_after_escaping(tmp_path):
+    """`*` must remain usable — it's FTS5's prefix operator."""
+    archive = Archive(root=tmp_path / "arch")
+    archive.save_job(_with_topic(make_result(job_id=1), "концепция проекта"))
+    # Plain word — passes through unchanged, prefix wildcard works.
+    assert len(archive.search("концепц*")) == 1

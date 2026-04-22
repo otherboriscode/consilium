@@ -15,6 +15,7 @@ it can be rebuilt from the JSON files by replaying save_job().
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -25,7 +26,30 @@ from typing import Literal
 from consilium.models import JobResult
 from consilium.transcript import format_full_markdown
 
+logger = logging.getLogger(__name__)
+
 _SCHEMA_PATH = Path(__file__).parent / "archive_schema.sql"
+
+# Any of these in a user query triggers FTS5 parser (phrase/prefix/operator).
+# `*` is intentionally NOT here — it's a valid and supported prefix wildcard.
+_FTS_PARSER_TRIGGERS = frozenset('"():+')
+
+
+def _escape_fts_query(query: str) -> str:
+    """Sanitize a user query for FTS5 `MATCH`.
+
+    - Empty/whitespace → empty (caller should return [] without querying).
+    - If the query contains FTS5 special syntax (quotes, parens, operators),
+      wrap the whole thing in a phrase match with inner `"` escaped.
+    - Plain words and prefix queries (`kitty*`) pass through unchanged so users
+      keep access to the useful bits of FTS5 syntax.
+    """
+    q = query.strip()
+    if not q:
+        return q
+    if any(c in q for c in _FTS_PARSER_TRIGGERS):
+        return '"' + q.replace('"', '""') + '"'
+    return q
 
 # Keep cyrillic + latin alphanumerics; collapse everything else to dashes.
 _SLUG_RE = re.compile(r"[^a-z0-9а-я]+", re.IGNORECASE)
@@ -380,25 +404,34 @@ class Archive:
         """Full-text search across topic/project/tldr/recommendation/transcript.
         Ranked by BM25, newest ties first.
 
+        Special characters in `query` (quotes, parens, +, :) are escaped by
+        wrapping the whole query in a phrase match so malformed FTS5 syntax
+        can't crash the call. Prefix wildcards (`концепц*`) pass through
+        unchanged. Unrecoverable FTS5 parse errors are logged and return [].
+
         Note: the tokenizer is `unicode61` — it handles Cyrillic but does not
         stem Russian morphology. Use prefix matching (`концепц*`) if you need
         to catch declensions.
         """
-        q = query.strip()
+        q = _escape_fts_query(query)
         if not q:
             return []
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT j.* FROM jobs j
-                JOIN jobs_fts_content c ON c.job_id = j.job_id
-                JOIN jobs_fts f ON f.rowid = c.id
-                WHERE jobs_fts MATCH ?
-                ORDER BY bm25(jobs_fts), j.created_at DESC
-                LIMIT ?
-                """,
-                (q, limit),
-            ).fetchall()
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT j.* FROM jobs j
+                    JOIN jobs_fts_content c ON c.job_id = j.job_id
+                    JOIN jobs_fts f ON f.rowid = c.id
+                    WHERE jobs_fts MATCH ?
+                    ORDER BY bm25(jobs_fts), j.created_at DESC
+                    LIMIT ?
+                    """,
+                    (q, limit),
+                ).fetchall()
+        except sqlite3.OperationalError as e:
+            logger.warning("FTS5 query %r failed: %s", query, e)
+            return []
         return [_row_to_summary(r) for r in rows]
 
     def load_job(self, job_id: int) -> JobResult:

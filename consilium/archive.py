@@ -69,6 +69,19 @@ class StatsRow:
     total_cost_usd: float
 
 
+@dataclass(frozen=True)
+class ROIRow:
+    """$ spent on a model divided by total score points the judge gave it.
+    `cost_per_score` is None when total_score is 0 (avoids div-by-zero and
+    correctly flags that the model earned nothing per judge)."""
+
+    model: str
+    total_cost_usd: float
+    total_score: int
+    n_jobs: int
+    cost_per_score: float | None
+
+
 def _row_to_summary(row: sqlite3.Row) -> JobSummary:
     return JobSummary(
         job_id=row["job_id"],
@@ -183,12 +196,12 @@ class Archive:
                 )
             if judge is not None:
                 for role, score in judge.scores.items():
-                    model = role_to_model.get(role)
-                    if model is None:
+                    role_model = role_to_model.get(role)
+                    if role_model is None:
                         continue  # orphan score: judge named a role not in config
                     conn.execute(
                         "INSERT INTO job_scores (job_id, role, model, score) VALUES (?, ?, ?, ?)",
-                        (result.job_id, role, model, score),
+                        (result.job_id, role, role_model, score),
                     )
             conn.execute(
                 """
@@ -279,6 +292,46 @@ class Archive:
             )
             for r in rows
         ]
+
+    def get_roi_stats(self) -> list[ROIRow]:
+        """ROI per participant model: cost spent ÷ judge score points earned.
+
+        Judge-only models (Haiku as synthesizer) are excluded — they are not
+        in `job_scores`. We aggregate per-job first to avoid row multiplication
+        when a model plays multiple roles (unlikely today, but safe).
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT jc.model AS model,
+                       SUM(jc.cost_usd) AS total_cost,
+                       COALESCE(
+                           (SELECT SUM(score) FROM job_scores
+                            WHERE model = jc.model),
+                           0
+                       ) AS total_score,
+                       COUNT(DISTINCT jc.job_id) AS n_jobs
+                FROM job_costs jc
+                WHERE jc.model IN (SELECT DISTINCT model FROM job_scores)
+                GROUP BY jc.model
+                ORDER BY total_cost DESC
+                """
+            ).fetchall()
+        result: list[ROIRow] = []
+        for r in rows:
+            total_score = int(r["total_score"])
+            total_cost = r["total_cost"] or 0.0
+            cps = (total_cost / total_score) if total_score > 0 else None
+            result.append(
+                ROIRow(
+                    model=r["model"],
+                    total_cost_usd=total_cost,
+                    total_score=total_score,
+                    n_jobs=r["n_jobs"],
+                    cost_per_score=cps,
+                )
+            )
+        return result
 
     def search(self, query: str, *, limit: int = 20) -> list[JobSummary]:
         """Full-text search across topic/project/tldr/recommendation/transcript.

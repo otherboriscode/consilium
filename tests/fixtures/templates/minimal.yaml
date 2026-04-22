@@ -1,0 +1,14 @@
+name: minimal
+title: Minimal test template
+description: Two participants + judge
+participants:
+  - model: claude-opus-4-7
+    role: pragmatist
+    system_prompt: "Ты прагматик. ~300 слов."
+  - model: openai/gpt-5
+    role: skeptic
+    system_prompt: "Ты скептик. ~300 слов."
+judge:
+  model: claude-haiku-4-5
+  system_prompt: "Ты синтезатор."
+rounds: 1

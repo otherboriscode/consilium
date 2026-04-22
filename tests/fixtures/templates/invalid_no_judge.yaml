@@ -1,0 +1,8 @@
+name: invalid_no_judge
+title: Missing judge
+description: Should fail validation
+participants:
+  - model: claude-opus-4-7
+    role: a
+    system_prompt: "..."
+rounds: 1

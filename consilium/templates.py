@@ -43,7 +43,17 @@ class Template(BaseModel):
 
 
 def _content_hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    """Stable 12-hex-char SHA256 digest after EOL + trailing-whitespace
+    normalization.
+
+    Normalization:
+      - CRLF / CR → LF (cross-platform consistency; git's `core.autocrlf=true`
+        on Windows won't flip the version)
+      - Trailing whitespace stripped, then exactly one `\n` appended (so files
+        with and without a final newline hash the same)
+    """
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n").rstrip() + "\n"
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
 
 
 def _default_search_dirs() -> list[Path]:

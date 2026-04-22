@@ -76,3 +76,27 @@ def test_custom_dir_overrides_default(tmp_path):
 
     t = load_template("foo", search_dirs=[custom, default])
     assert "CUSTOM" in t.participants[0].system_prompt
+
+
+def test_content_hash_stable_across_eol_styles():
+    from consilium.templates import _content_hash
+    assert _content_hash("name: foo\nvalue: 1\n") == _content_hash(
+        "name: foo\r\nvalue: 1\r\n"
+    )
+    assert _content_hash("a\nb\n") == _content_hash("a\rb\r")
+
+
+def test_content_hash_stable_across_trailing_whitespace():
+    from consilium.templates import _content_hash
+    a = _content_hash("name: foo\nvalue: 1")
+    b = _content_hash("name: foo\nvalue: 1\n")
+    c = _content_hash("name: foo\nvalue: 1\n\n\n")
+    d = _content_hash("name: foo\nvalue: 1   \n\n")
+    assert a == b == c == d
+
+
+def test_content_hash_different_for_semantic_change():
+    from consilium.templates import _content_hash
+    assert _content_hash("name: foo\nvalue: 1\n") != _content_hash(
+        "name: foo\nvalue: 2\n"
+    )

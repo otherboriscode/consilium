@@ -272,3 +272,63 @@ async def test_orchestrator_propagates_judge_truncated():
     result = await run_debate(cfg, registry, job_id=99)  # type: ignore[arg-type]
     assert result.judge is not None
     assert result.judge_truncated is True
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_skips_unknown_role_in_cost_breakdown(caplog):
+    """If a RoundMessage somehow has a role_slug not in config.participants,
+    the orchestrator logs a warning and skips it instead of crashing."""
+    import logging
+    caplog.set_level(logging.WARNING)
+
+    cfg = JobConfig(
+        topic="t",
+        participants=[
+            ParticipantConfig(model="openai/gpt-5", role="a", system_prompt="s"),
+        ],
+        judge=JudgeConfig(model="claude-haiku-4-5", system_prompt="j"),
+        rounds=1,
+    )
+    # Force a mismatch by spying and returning a message with unknown role.
+    from consilium.models import RoundMessage as _RM
+    from consilium.providers.base import CallUsage as _CU
+
+    class _BrokenRegistry:
+        def __init__(self, inner):
+            self._inner = inner
+        def get_provider(self, model):
+            return self._inner.get_provider(model)
+
+    inner = _FakeRegistry(
+        {
+            "claude-haiku-4-5": _FakeProvider(Behavior(text=FIXTURE_JUDGE)),
+            "openai/gpt-5": _FakeProvider(Behavior(text="A")),
+        }
+    )
+
+    # Monkey-patch run_round to return a message with role_slug='ghost'.
+    import consilium.orchestrator as orch
+
+    async def _fake_run_round(**kwargs):
+        return [
+            _RM(
+                round_index=kwargs["round_index"],
+                role_slug="ghost",  # not in config.participants
+                text="haunted",
+                error=None,
+                usage=_CU(input_tokens=10, output_tokens=5),
+                duration_seconds=0.1,
+                cost_usd=0.01,
+            )
+        ]
+
+    orig_run_round = orch.run_round
+    orch.run_round = _fake_run_round
+    try:
+        result = await run_debate(cfg, inner, job_id=7)  # type: ignore[arg-type]
+    finally:
+        orch.run_round = orig_run_round
+
+    assert any("ghost" in rec.message for rec in caplog.records)
+    # Cost breakdown has no entry for 'ghost' — only judge.
+    assert "ghost" not in result.cost_breakdown

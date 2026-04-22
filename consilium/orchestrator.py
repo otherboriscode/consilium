@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import logging
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -17,6 +18,8 @@ from consilium._round_runner import run_round
 from consilium.models import JobConfig, JobResult, ProgressEvent, RoundMessage
 from consilium.providers.registry import ProviderRegistry
 from consilium.transcript import build_transcript_for_next_round
+
+logger = logging.getLogger(__name__)
 
 
 async def run_debate(
@@ -73,7 +76,16 @@ async def run_debate(
 
     cost_breakdown: dict[str, float] = defaultdict(float)
     for m in all_messages:
-        model = next(p.model for p in config.participants if p.role == m.role_slug)
+        model = next(
+            (p.model for p in config.participants if p.role == m.role_slug),
+            None,
+        )
+        if model is None:
+            logger.warning(
+                "role_slug %r not found in config.participants, skipping in cost_breakdown",
+                m.role_slug,
+            )
+            continue
         cost_breakdown[model] += m.cost_usd
     if judge_result.cost_usd > 0:
         cost_breakdown[config.judge.model] += judge_result.cost_usd

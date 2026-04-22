@@ -116,3 +116,17 @@ def test_job_result_total_cost_matches_breakdown():
         completed_at=datetime.now(timezone.utc),
     )
     assert sum(result.cost_breakdown.values()) == pytest.approx(result.total_cost_usd)
+
+
+def test_judge_output_clamps_out_of_range_scores():
+    j = JudgeOutput(
+        raw_markdown="...",
+        tldr="t",
+        consensus=[],
+        disagreements=[],
+        unique_contributions={},
+        blind_spots=[],
+        recommendation="r",
+        scores={"architect": 7, "marketer": -1, "analyst": 2},
+    )
+    assert j.scores == {"architect": 3, "marketer": 0, "analyst": 2}

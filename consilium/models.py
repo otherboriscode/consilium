@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from consilium.providers.base import CallUsage
 
@@ -90,6 +90,24 @@ class JudgeOutput(BaseModel):
     blind_spots: list[str]
     recommendation: str
     scores: dict[str, int]
+
+    @field_validator("scores")
+    @classmethod
+    def _clamp_scores(cls, v: dict[str, int]) -> dict[str, int]:
+        import logging as _logging
+
+        result: dict[str, int] = {}
+        for role, score in v.items():
+            clamped = max(0, min(3, score))
+            if clamped != score:
+                _logging.getLogger(__name__).warning(
+                    "score %d for %r out of [0, 3], clamping to %d",
+                    score,
+                    role,
+                    clamped,
+                )
+            result[role] = clamped
+        return result
 
 
 ProgressKind = Literal[

@@ -19,6 +19,7 @@ import logging
 import os
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -288,9 +289,12 @@ class Archive:
         limit: int = 50,
         project: str | None = None,
         template: str | None = None,
+        since: "datetime | None" = None,
+        until: "datetime | None" = None,
     ) -> list[JobSummary]:
-        """Latest jobs first (by `created_at`). Optional filters by project
-        and/or template. Uses SQLite only — no JSON reads."""
+        """Latest jobs first (by `created_at`). Optional filters:
+        `project`, `template`, and `since`/`until` on `started_at`.
+        Uses SQLite only — no JSON reads."""
         sql = ["SELECT * FROM jobs WHERE 1=1"]
         params: list[object] = []
         if project is not None:
@@ -299,51 +303,84 @@ class Archive:
         if template is not None:
             sql.append("AND template_name = ?")
             params.append(template)
+        if since is not None:
+            sql.append("AND started_at >= ?")
+            params.append(since.isoformat())
+        if until is not None:
+            sql.append("AND started_at < ?")
+            params.append(until.isoformat())
         sql.append("ORDER BY created_at DESC, job_id DESC LIMIT ?")
         params.append(limit)
         with self._connect() as conn:
             rows = conn.execute(" ".join(sql), params).fetchall()
         return [_row_to_summary(r) for r in rows]
 
-    def get_stats(self, *, group_by: StatsGroupBy) -> list[StatsRow]:
+    def get_stats(
+        self,
+        *,
+        group_by: StatsGroupBy,
+        since: "datetime | None" = None,
+    ) -> list[StatsRow]:
         """Aggregated counts and total cost.
 
         - group_by="model":    joins via job_costs; one row per model touched.
         - group_by="template": one row per template_name.
         - group_by="project":  one row per non-NULL project (NULL is dropped).
+
+        Optional `since` filter limits the aggregation to jobs with
+        `started_at >= since`.
         """
+        since_iso = since.isoformat() if since is not None else None
         if group_by == "model":
-            sql = """
-                SELECT jc.model AS key,
-                       COUNT(DISTINCT jc.job_id) AS n_jobs,
-                       SUM(jc.cost_usd) AS total_cost
-                FROM job_costs jc
-                GROUP BY jc.model
-                ORDER BY total_cost DESC
-            """
+            if since_iso is not None:
+                sql = """
+                    SELECT jc.model AS key,
+                           COUNT(DISTINCT jc.job_id) AS n_jobs,
+                           SUM(jc.cost_usd) AS total_cost
+                    FROM job_costs jc
+                    JOIN jobs j ON j.job_id = jc.job_id
+                    WHERE j.started_at >= ?
+                    GROUP BY jc.model
+                    ORDER BY total_cost DESC
+                """
+                params: tuple[object, ...] = (since_iso,)
+            else:
+                sql = """
+                    SELECT jc.model AS key,
+                           COUNT(DISTINCT jc.job_id) AS n_jobs,
+                           SUM(jc.cost_usd) AS total_cost
+                    FROM job_costs jc
+                    GROUP BY jc.model
+                    ORDER BY total_cost DESC
+                """
+                params = ()
         elif group_by == "template":
-            sql = """
-                SELECT template_name AS key,
-                       COUNT(*) AS n_jobs,
-                       SUM(total_cost_usd) AS total_cost
-                FROM jobs
-                GROUP BY template_name
-                ORDER BY total_cost DESC
-            """
+            base = (
+                "SELECT template_name AS key, COUNT(*) AS n_jobs, "
+                "SUM(total_cost_usd) AS total_cost FROM jobs "
+            )
+            if since_iso is not None:
+                sql = base + "WHERE started_at >= ? GROUP BY template_name ORDER BY total_cost DESC"
+                params = (since_iso,)
+            else:
+                sql = base + "GROUP BY template_name ORDER BY total_cost DESC"
+                params = ()
         elif group_by == "project":
-            sql = """
-                SELECT project AS key,
-                       COUNT(*) AS n_jobs,
-                       SUM(total_cost_usd) AS total_cost
-                FROM jobs
-                WHERE project IS NOT NULL
-                GROUP BY project
-                ORDER BY total_cost DESC
-            """
+            base = (
+                "SELECT project AS key, COUNT(*) AS n_jobs, "
+                "SUM(total_cost_usd) AS total_cost FROM jobs "
+                "WHERE project IS NOT NULL"
+            )
+            if since_iso is not None:
+                sql = base + " AND started_at >= ? GROUP BY project ORDER BY total_cost DESC"
+                params = (since_iso,)
+            else:
+                sql = base + " GROUP BY project ORDER BY total_cost DESC"
+                params = ()
         else:
             raise ValueError(f"group_by must be model/template/project, got {group_by!r}")
         with self._connect() as conn:
-            rows = conn.execute(sql).fetchall()
+            rows = conn.execute(sql, params).fetchall()
         return [
             StatsRow(
                 key=r["key"],

@@ -166,3 +166,16 @@ class Archive:
             conn.commit()
 
         return SavedJob(job_id=result.job_id, md_path=md_path, json_path=json_path)
+
+    def load_job(self, job_id: int) -> JobResult:
+        """Rehydrate a JobResult from its JSON file. JSON is the source of truth —
+        SQLite only stores the pointer. Raises KeyError if `job_id` unknown."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT json_path FROM jobs WHERE job_id = ?", (job_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"job {job_id} not found in archive")
+        json_path = self.root / row["json_path"]
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        return JobResult.model_validate(data)

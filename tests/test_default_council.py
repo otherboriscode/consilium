@@ -48,3 +48,10 @@ def test_default_council_reasoning_models_have_adequate_max_tokens():
     # Moderate reasoning (Opus non-deep, deepseek-r1) — 3500.
     assert by_role["architect"].max_tokens >= 3500
     assert by_role["engineer"].max_tokens >= 3500
+
+
+def test_default_council_prompts_forbid_h1():
+    cfg = build_default_council(topic="t")
+    for p in cfg.participants:
+        assert "не используй заголовки первого уровня" in p.system_prompt.lower() or \
+               "не используй заголовки" in p.system_prompt.lower()

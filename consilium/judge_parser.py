@@ -48,6 +48,11 @@ _LIST_ITEM = re.compile(r"^\s*[-*•]\s+(.+?)\s*$")
 _SCORE_LINE = re.compile(
     r"^\s*[-*•]\s*([^:]+?)\s*:\s*(-?\d+)(?:\s*/\s*\d+)?\s*$"
 )
+# For contributions-section bullets: `- role: free-form text`. Matches only
+# when the text after the colon is non-numeric (scores use _SCORE_LINE instead).
+_CONTRIBUTION_BULLET = re.compile(
+    r"^\s*[-*•]\s*([^:]+?)\s*:\s*(.+?)\s*$"
+)
 
 
 class JudgeParseError(Exception):
@@ -93,8 +98,14 @@ def parse_judge_markdown(text: str) -> JudgeOutput:
             continue  # still in preamble
 
         if current_section == _SECTION_CONTRIBUTIONS:
-            # Within contributions, an H2/H3/H4 that isn't a known top-level
-            # section becomes a participant sub-header.
+            # Preferred format: `- role: free-form text` (bullet per participant).
+            bullet = _CONTRIBUTION_BULLET.match(raw_line)
+            if bullet:
+                role = bullet.group(1).strip().strip("*").strip()
+                contributions[role] = [bullet.group(2).strip()]
+                current_contribution_role = role
+                continue
+            # Legacy format: `## role` / `### role` subsection header.
             sub_match = _SUBSECTION_HEADER.match(raw_line)
             if sub_match and _match_section(sub_match.group(1)) is None:
                 current_contribution_role = sub_match.group(1).strip()

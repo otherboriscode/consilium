@@ -6,11 +6,21 @@
 """
 from __future__ import annotations
 
+import re
 from itertools import groupby
 
 import yaml
 
 from consilium.models import JobResult, RoundMessage
+
+_H1_H2_LEADING = re.compile(r"^(#{1,2}) ", flags=re.MULTILINE)
+
+
+def _demote_headers(text: str) -> str:
+    """Downshift any leading `#`/`##` in participant text to `###`/`####`, so
+    participant content doesn't collide with our transcript structure (`# Раунд N`,
+    `## role_slug`). Defence in depth — the system prompt also forbids H1."""
+    return _H1_H2_LEADING.sub(lambda m: "#" * (len(m.group(1)) + 2) + " ", text)
 
 
 def build_transcript_for_next_round(messages: list[RoundMessage]) -> str:
@@ -25,7 +35,7 @@ def build_transcript_for_next_round(messages: list[RoundMessage]) -> str:
         for m in group:
             parts.append(f"## {m.role_slug}\n")
             if m.text is not None:
-                parts.append(m.text.rstrip() + "\n")
+                parts.append(_demote_headers(m.text).rstrip() + "\n")
             else:
                 parts.append(f"_[не ответил: {m.error}]_\n")
             parts.append("")  # blank line between participants

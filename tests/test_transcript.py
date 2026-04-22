@@ -126,3 +126,18 @@ def test_format_full_markdown_shows_judge_truncation_warning():
     md = format_full_markdown(result)
     assert "обрезан по лимиту токенов" in md
     assert "judge.max_tokens" in md
+
+
+def test_transcript_demotes_h1_from_participant():
+    messages = [_msg(0, "architect", text="# Big Header\n\nBody text")]
+    out = build_transcript_for_next_round(messages)
+    assert "# Big Header" not in out.split("## architect", 1)[1].split("## ")[0]
+    assert "### Big Header" in out
+
+
+def test_transcript_demotes_h2_from_participant():
+    messages = [_msg(0, "architect", text="## Section\n\nBody")]
+    out = build_transcript_for_next_round(messages)
+    # After `## architect`, there should be `#### Section`, not `## Section`.
+    architect_block = out.split("## architect", 1)[1]
+    assert "#### Section" in architect_block

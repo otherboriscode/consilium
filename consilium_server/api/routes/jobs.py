@@ -19,7 +19,6 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -52,15 +51,6 @@ from consilium_server.api.state import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
-
-
-def _archive_root() -> Path:
-    return Path(
-        os.environ.get(
-            "CONSILIUM_DATA_DIR",
-            str(Path.home() / ".local" / "share" / "consilium"),
-        )
-    )
 
 
 def _build_registry() -> ProviderRegistry:
@@ -127,7 +117,7 @@ async def submit_job(
 
     # 4. Preview + cost check
     preview = build_preview(config, context_block=context_block)
-    archive = Archive(root=_archive_root())
+    archive = Archive()
     usage = compute_usage(archive)
     perm = check_permissions(
         estimate_usd=preview.estimated_cost_usd,
@@ -283,7 +273,7 @@ async def list_jobs(
     from the archive, deduped by `job_id`."""
     state = get_state()
     active = [_handle_to_list_item(h) for h in state.all_active()]
-    archive = Archive(root=_archive_root())
+    archive = Archive()
     recent = archive.list_jobs(project=project, limit=limit)
     active_ids = {item.job_id for item in active}
     merged = active[:]
@@ -349,7 +339,7 @@ async def get_job(job_id: int, _: AuthDep) -> JobStatusResponse:
     state = get_state()
     if handle := state.get(job_id):
         return _handle_to_status(handle)
-    archive = Archive(root=_archive_root())
+    archive = Archive()
     # Archive.list_jobs doesn't have a "by job_id" query; fetch one row.
     with archive._connect() as conn:  # type: ignore[attr-defined]
         row = conn.execute(

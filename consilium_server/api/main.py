@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from consilium_server.api.routes import archive as archive_router
 from consilium_server.api.routes import jobs as jobs_router
 
 app = FastAPI(
@@ -22,6 +23,7 @@ async def health() -> dict[str, str]:
 
 
 app.include_router(jobs_router.router)
+app.include_router(archive_router.router)
 
 
 def main() -> None:

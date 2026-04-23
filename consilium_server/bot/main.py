@@ -20,18 +20,28 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
+from consilium_server.bot.client import ConsiliumClient
 from consilium_server.bot.handlers.basic import router as basic_router
-from consilium_server.bot.middlewares import WhitelistMiddleware
+from consilium_server.bot.handlers.new_debate import router as new_debate_router
+from consilium_server.bot.middlewares import (
+    ClientInjectionMiddleware,
+    WhitelistMiddleware,
+)
 
 
-def build_dispatcher() -> Dispatcher:
+def build_dispatcher(client: ConsiliumClient | None = None) -> Dispatcher:
     """Build a Dispatcher with all routers and middlewares wired in.
     Factored out so tests can exercise routing without starting polling."""
     dp = Dispatcher()
     whitelist = WhitelistMiddleware()
     dp.message.middleware(whitelist)
     dp.callback_query.middleware(whitelist)
+    if client is not None:
+        inject = ClientInjectionMiddleware(client)
+        dp.message.middleware(inject)
+        dp.callback_query.middleware(inject)
     dp.include_router(basic_router)
+    dp.include_router(new_debate_router)
     return dp
 
 
@@ -48,11 +58,15 @@ async def run_bot() -> None:
         token=os.environ["TELEGRAM_BOT_TOKEN"],
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
-    dp = build_dispatcher()
-    try:
-        await dp.start_polling(bot)
-    finally:
-        await bot.session.close()
+    async with ConsiliumClient(
+        base_url=os.environ["CONSILIUM_API_BASE"],
+        token=os.environ["CONSILIUM_API_TOKEN"],
+    ) as client:
+        dp = build_dispatcher(client)
+        try:
+            await dp.start_polling(bot)
+        finally:
+            await bot.session.close()
 
 
 def main() -> None:

@@ -68,15 +68,10 @@ def _next_job_id() -> int:
     return next_job_id()
 
 
-@router.post(
-    "",
-    response_model=SubmitJobResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-)
-async def submit_job(
-    req: SubmitJobRequest, _: AuthDep
-) -> SubmitJobResponse:
-    # 1. Template
+def _prepare_submission(req: SubmitJobRequest):
+    """Validate + preview + cost-check. Returns (config, context_block, preview,
+    warnings). Raises HTTPException on any failure, matching the API contract:
+    404 unknown template/pack, 422 structural violation, 402 cost guard."""
     try:
         template = load_template(req.template)
     except TemplateError as e:
@@ -90,7 +85,6 @@ async def submit_job(
     if req.project:
         config = config.model_copy(update={"project": req.project})
 
-    # 2. Context
     context_block: str | None = req.context_block
     if req.pack:
         try:
@@ -103,7 +97,6 @@ async def submit_job(
     if context_block is not None:
         config = config.model_copy(update={"context_block": context_block})
 
-    # 3. Structural validation
     limits = load_limits()
     struct = validate_config(config, limits=limits)
     if not struct.allowed:
@@ -115,7 +108,6 @@ async def submit_job(
             },
         )
 
-    # 4. Preview + cost check
     preview = build_preview(config, context_block=context_block)
     archive = Archive()
     usage = compute_usage(archive)
@@ -134,6 +126,21 @@ async def submit_job(
                 "estimated_cost_usd": preview.estimated_cost_usd,
             },
         )
+    return config, context_block, preview, [w.message for w in perm.warnings]
+
+
+@router.post(
+    "",
+    response_model=SubmitJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def submit_job(
+    req: SubmitJobRequest, _: AuthDep
+) -> SubmitJobResponse:
+    """Schedule a debate. Returns 202 + job_id on accept; 402/422/429/404 on
+    any pre-flight failure (see `_prepare_submission`)."""
+    config, context_block, preview, warnings = _prepare_submission(req)
+    _ = context_block  # already merged into config above
 
     # 5. Allocate job_id and the JobHandle up front. Task is wired below.
     job_id = _next_job_id()
@@ -174,7 +181,7 @@ async def submit_job(
             handle.status = "completed"
             handle.current_cost_usd = result.total_cost_usd
             handle.completed_at_iso = datetime.now(timezone.utc).isoformat()
-            archive.save_job(result)
+            Archive().save_job(result)
             await state.publish_event(
                 job_id,
                 ApiProgressEvent(
@@ -217,7 +224,7 @@ async def submit_job(
         status="running",
         estimated_cost_usd=preview.estimated_cost_usd,
         estimated_duration_seconds=preview.estimated_duration_seconds,
-        warnings=[w.message for w in perm.warnings],
+        warnings=warnings,
     )
 
 

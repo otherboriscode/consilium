@@ -9,6 +9,8 @@ from typing import Any
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 
+from consilium_server.bot.client import ConsiliumClient
+
 logger = logging.getLogger("consilium.bot")
 
 
@@ -59,3 +61,24 @@ class WhitelistMiddleware(BaseMiddleware):
             user.username if user else None,
         )
         return None  # silent drop
+
+
+class ClientInjectionMiddleware(BaseMiddleware):
+    """Give handlers access to a ready-to-use ConsiliumClient via `data["client"]`.
+
+    The client is constructed once at dispatcher build time and re-used
+    across every request — one persistent httpx.AsyncClient connection
+    pool, lifetime tied to the bot process.
+    """
+
+    def __init__(self, client: ConsiliumClient) -> None:
+        self._client = client
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        data["client"] = self._client
+        return await handler(event, data)

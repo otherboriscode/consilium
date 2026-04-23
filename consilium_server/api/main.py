@@ -19,6 +19,7 @@ from consilium_server.api.routes import archive as archive_router
 from consilium_server.api.routes import budget as budget_router
 from consilium_server.api.routes import jobs as jobs_router
 from consilium_server.api.routes import packs as packs_router
+from consilium_server.api.routes import preview as preview_router
 
 logger = logging.getLogger("consilium.api")
 
@@ -99,6 +100,7 @@ app.include_router(jobs_router.router)
 app.include_router(archive_router.router)
 app.include_router(budget_router.router)
 app.include_router(packs_router.router)
+app.include_router(preview_router.router)
 
 
 def main() -> None:

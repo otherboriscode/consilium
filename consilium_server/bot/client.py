@@ -88,18 +88,23 @@ class ConsiliumClient:
         base_url: str,
         token: str,
         timeout: float = 30.0,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._token = token
         self._timeout = timeout
+        self._transport = transport  # lets tests plug in ASGITransport
         self._client: httpx.AsyncClient | None = None
 
     async def __aenter__(self) -> ConsiliumClient:
-        self._client = httpx.AsyncClient(
-            base_url=self._base_url,
-            headers={"Authorization": f"Bearer {self._token}"},
-            timeout=self._timeout,
-        )
+        kwargs: dict = {
+            "base_url": self._base_url,
+            "headers": {"Authorization": f"Bearer {self._token}"},
+            "timeout": self._timeout,
+        }
+        if self._transport is not None:
+            kwargs["transport"] = self._transport
+        self._client = httpx.AsyncClient(**kwargs)
         return self
 
     async def __aexit__(self, *exc) -> None:

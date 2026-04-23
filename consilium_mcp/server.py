@@ -93,6 +93,8 @@ def build_server(
             for t in registry.tools
         ]
 
+    from consilium_mcp.registry import ProgressFn
+
     async def _noop_progress(
         _progress: float, _total: float | None, _message: str
     ) -> None:
@@ -109,7 +111,7 @@ def build_server(
 
         # If the MCP client sent `_meta.progressToken`, forward every
         # progress call as a JSON-RPC notification. Otherwise, use a no-op.
-        progress_fn = _noop_progress
+        progress_fn: ProgressFn = _noop_progress
         try:
             ctx = server.request_context
             token = getattr(getattr(ctx, "meta", None), "progressToken", None)

@@ -22,6 +22,7 @@ from aiogram.enums import ParseMode
 
 from consilium_server.bot.client import ConsiliumClient
 from consilium_server.bot.handlers.basic import router as basic_router
+from consilium_server.bot.handlers.jobs import router as jobs_router
 from consilium_server.bot.handlers.new_debate import router as new_debate_router
 from consilium_server.bot.handlers.run_debate import router as run_debate_router
 from consilium_server.bot.middlewares import (
@@ -44,6 +45,7 @@ def build_dispatcher(client: ConsiliumClient | None = None) -> Dispatcher:
     dp.include_router(basic_router)
     dp.include_router(new_debate_router)
     dp.include_router(run_debate_router)
+    dp.include_router(jobs_router)
     return dp
 
 

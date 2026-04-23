@@ -293,6 +293,39 @@ async def list_jobs(
     return merged[:limit]
 
 
+@router.get("/{job_id}/events")
+async def stream_events(job_id: int, _: AuthDep):
+    """Server-Sent Events stream of ProgressEvent objects for a live job.
+
+    The stream closes on terminal event (`done` / `error`) or when the job
+    is unregistered (sentinel `None` on the internal queue). A keepalive
+    event fires every 5 minutes of idle to keep proxies happy."""
+    from sse_starlette.sse import EventSourceResponse
+
+    state = get_state()
+    if state.get(job_id) is None:
+        raise HTTPException(
+            status_code=404, detail=f"Job {job_id} not active"
+        )
+    queue = state.subscribe_events(job_id)
+
+    async def event_generator():
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=300)
+            except asyncio.TimeoutError:
+                yield {"event": "keepalive", "data": ""}
+                continue
+            if event is None:  # sentinel — job finished, stream ends
+                yield {"event": "end", "data": "{}"}
+                return
+            yield {"event": event.kind, "data": event.model_dump_json()}
+            if event.kind in ("done", "error"):
+                return
+
+    return EventSourceResponse(event_generator())
+
+
 @router.post("/{job_id}/cancel")
 async def cancel_job(job_id: int, _: AuthDep) -> dict:
     """Cancel an in-flight job. 404 if unknown, 409 if already finished."""

@@ -69,3 +69,22 @@ def test_load_pack_missing_manifest_raises(tmp_path):
     (tmp_path / "packs" / "empty").mkdir(parents=True)
     with pytest.raises(FileNotFoundError):
         load_pack("empty", root=tmp_path / "packs")
+
+
+def test_delete_pack_removes_directory(tmp_path):
+    from consilium.context.pack import delete_pack
+
+    src = tmp_path / "b.md"
+    src.write_text("# b")
+    create_pack(name="goner", files=[src], root=tmp_path / "packs")
+    assert (tmp_path / "packs" / "goner").is_dir()
+    delete_pack("goner", root=tmp_path / "packs")
+    assert not (tmp_path / "packs" / "goner").exists()
+
+
+def test_delete_pack_missing_raises(tmp_path):
+    import pytest
+    from consilium.context.pack import delete_pack
+
+    with pytest.raises(FileNotFoundError):
+        delete_pack("does_not_exist", root=tmp_path / "packs")

@@ -121,3 +121,13 @@ def list_packs(*, root: Path | None = None) -> list[str]:
         for d in root.iterdir()
         if d.is_dir() and (d / "pack.yaml").is_file()
     )
+
+
+def delete_pack(name: str, *, root: Path | None = None) -> None:
+    """Remove a pack's directory and all its files. Raises `FileNotFoundError`
+    if the pack doesn't exist — caller decides how to react (404 etc.)."""
+    root = root or _default_root()
+    pack_dir = root / name
+    if not (pack_dir / "pack.yaml").is_file():
+        raise FileNotFoundError(f"Pack {name!r} not found at {pack_dir}")
+    shutil.rmtree(pack_dir)

@@ -25,6 +25,7 @@ api = [
     "uvicorn[standard]>=0.32",
     "sse-starlette>=2.1",
     "httpx>=0.27",  # for FastAPI TestClient
+    "python-multipart>=0.0.9",  # for multipart/form-data (pack upload)
 ]
 mcp = [
     "mcp>=1.0",

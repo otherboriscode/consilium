@@ -2,8 +2,6 @@
 reach a subscribed GET /jobs/{id}/events stream."""
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 

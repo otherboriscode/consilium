@@ -293,6 +293,23 @@ async def list_jobs(
     return merged[:limit]
 
 
+@router.post("/{job_id}/cancel")
+async def cancel_job(job_id: int, _: AuthDep) -> dict:
+    """Cancel an in-flight job. 404 if unknown, 409 if already finished."""
+    state = get_state()
+    handle = state.get(job_id)
+    if handle is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not active")
+    if handle.task is None or handle.task.done():
+        raise HTTPException(status_code=409, detail="Job already finished")
+    handle.task.cancel()
+    try:
+        await asyncio.wait_for(handle.task, timeout=5.0)
+    except (asyncio.CancelledError, asyncio.TimeoutError):
+        pass
+    return {"job_id": job_id, "status": "cancelled"}
+
+
 @router.get("/{job_id}", response_model=JobStatusResponse)
 async def get_job(job_id: int, _: AuthDep) -> JobStatusResponse:
     """Look up an active job in memory; fall back to the archive; 404 otherwise."""

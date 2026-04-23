@@ -1,0 +1,38 @@
+[Unit]
+Description=Consilium API — multi-LLM council HTTP API
+After=network.target
+Documentation=https://github.com/otherboriscode/consilium
+
+[Service]
+Type=exec
+User=consilium
+Group=consilium
+WorkingDirectory=/opt/consilium
+EnvironmentFile=/etc/consilium/.env
+ExecStart=/opt/consilium/.venv/bin/consilium-api --host 127.0.0.1 --port 8421
+Restart=on-failure
+RestartSec=5s
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/consilium /var/log/consilium
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+# Resource limits
+MemoryMax=2G
+TasksMax=100
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

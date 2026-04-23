@@ -1,0 +1,35 @@
+[Unit]
+Description=Consilium Telegram bot
+After=network.target consilium-api.service
+Wants=consilium-api.service
+Documentation=https://github.com/otherboriscode/consilium
+
+[Service]
+Type=exec
+User=consilium
+Group=consilium
+WorkingDirectory=/opt/consilium
+EnvironmentFile=/etc/consilium/.env
+ExecStart=/opt/consilium/.venv/bin/consilium-bot
+Restart=on-failure
+RestartSec=10s
+
+# Security hardening (mirrors consilium-api)
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/consilium /var/log/consilium
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+MemoryMax=512M
+TasksMax=50
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

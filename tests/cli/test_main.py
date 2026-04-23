@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from consilium_cli.main import main
+from consilium_cli.main import main  # noqa: F401
 
 
 def test_help_lists_all_subcommands(capsys):
@@ -30,21 +30,31 @@ def test_version_flag(capsys):
     assert "consilium" in out.lower()
 
 
-def test_subcommand_routes_to_stub(capsys):
-    rc = main(["jobs"])
-    assert rc == 0
-    assert "jobs" in capsys.readouterr().out.lower()
+def test_jobs_subcommand_requires_config(capsys, monkeypatch):
+    """With no env/yaml config, all subcommands fail cleanly with exit 2
+    instead of crashing."""
+    monkeypatch.delenv("CONSILIUM_API_BASE", raising=False)
+    monkeypatch.delenv("CONSILIUM_API_TOKEN", raising=False)
+    monkeypatch.setenv("CONSILIUM_CLIENT_CONFIG", "/nonexistent/never.yaml")
+    with pytest.raises(ValueError, match="Client config incomplete"):
+        main(["jobs"])
 
 
-def test_positional_topic_routes_to_debate(capsys):
-    """`consilium "тема"` should dispatch to the debate subcommand."""
+def test_positional_topic_routes_to_debate(capsys, monkeypatch):
+    """`consilium "тема"` should dispatch to the debate subcommand. With no
+    config the debate command bails before hitting the API — but the
+    argparse dispatch itself must succeed."""
+    monkeypatch.delenv("CONSILIUM_API_BASE", raising=False)
+    monkeypatch.delenv("CONSILIUM_API_TOKEN", raising=False)
+    monkeypatch.setenv("CONSILIUM_CLIENT_CONFIG", "/nonexistent/never.yaml")
     rc = main(["some topic"])
-    assert rc == 0
-    # The stub prints "consilium debate — not yet implemented"
-    assert "debate" in capsys.readouterr().out.lower()
+    # debate-command bails on missing config with rc=2
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "Client config" in err or "incomplete" in err
 
 
-def test_explicit_debate_subcommand(capsys):
-    rc = main(["debate", "topic"])
-    assert rc == 0
-    assert "debate" in capsys.readouterr().out.lower()
+def test_debate_subcommand_without_topic_errors(capsys):
+    rc = main(["debate"])
+    assert rc == 2
+    assert "тема" in capsys.readouterr().err.lower()

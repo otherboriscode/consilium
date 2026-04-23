@@ -343,6 +343,12 @@ class ConsiliumClient:
         r = await self._request("GET", "/budget/daily")
         return r.json()["summary_markdown"]
 
+    async def get_alerts(self, *, mark: bool = False) -> dict:
+        r = await self._request(
+            "GET", "/budget/alerts", params={"mark": str(mark).lower()}
+        )
+        return r.json()
+
     # ----- templates --------------------------------------------------
 
     async def list_templates(self) -> list[str]:

@@ -318,6 +318,17 @@ class ConsiliumClient:
         )
         return r.json()
 
+    async def archive_stats(
+        self, group_by: str = "model"
+    ) -> list[dict]:
+        """`group_by`: "model" | "template" | "project"."""
+        r = await self._request("GET", f"/archive/stats/by-{group_by}")
+        return r.json()
+
+    async def archive_roi(self) -> list[dict]:
+        r = await self._request("GET", "/archive/stats/roi")
+        return r.json()
+
     # ----- budget -----------------------------------------------------
 
     async def get_usage(self) -> dict:

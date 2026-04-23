@@ -28,6 +28,7 @@ from consilium_server.bot.handlers.jobs import router as jobs_router
 from consilium_server.bot.handlers.new_debate import router as new_debate_router
 from consilium_server.bot.handlers.packs import router as packs_router
 from consilium_server.bot.handlers.run_debate import router as run_debate_router
+from consilium_server.bot.handlers.templates import router as templates_router
 from consilium_server.bot.middlewares import (
     ClientInjectionMiddleware,
     WhitelistMiddleware,
@@ -52,6 +53,7 @@ def build_dispatcher(client: ConsiliumClient | None = None) -> Dispatcher:
     dp.include_router(archive_router)
     dp.include_router(budget_router)
     dp.include_router(packs_router)
+    dp.include_router(templates_router)
     return dp
 
 

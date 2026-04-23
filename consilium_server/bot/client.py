@@ -295,6 +295,18 @@ class ConsiliumClient:
         self._raise_for(r)
         return r.json()["summary_markdown"]
 
+    # ----- templates --------------------------------------------------
+
+    async def list_templates(self) -> list[str]:
+        r = await self._c().get("/templates")
+        self._raise_for(r)
+        return r.json()
+
+    async def show_template(self, name: str) -> dict:
+        r = await self._c().get(f"/templates/{name}")
+        self._raise_for(r)
+        return r.json()
+
     # ----- packs ------------------------------------------------------
 
     async def list_packs(self) -> list[str]:

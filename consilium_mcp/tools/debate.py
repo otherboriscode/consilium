@@ -97,11 +97,35 @@ def _resolve_output_path(job_id: int, topic: str, save_to: str | None) -> Path:
     return Path.cwd() / "consilium" / f"{job_id:04d}-{_slugify(topic)}.md"
 
 
+def _friendly_progress(event: dict) -> str:
+    """Translate a raw SSE event into a one-line user-facing message."""
+    kind = event.get("kind", "")
+    round_idx = event.get("round_index")
+    role = event.get("role_slug") or "?"
+    if kind == "round_started":
+        return f"Раунд {round_idx} пошёл"
+    if kind == "participant_completed":
+        return f"{role} ответил (раунд {round_idx})"
+    if kind == "participant_failed":
+        return f"{role}: {event.get('error') or event.get('message') or 'ошибка'}"
+    if kind == "round_completed":
+        return f"Раунд {round_idx} завершён"
+    if kind == "judge_started":
+        return "Судья синтезирует"
+    if kind == "judge_completed":
+        return "Судья готов"
+    if kind == "done":
+        return f"Готово: {event.get('message', '')}"
+    if kind == "error":
+        return f"Ошибка: {event.get('message', '')}"
+    return kind or "(событие)"
+
+
 # ---------- tool handlers ----------
 
 
 def register(registry: Registry, *, client_factory) -> None:
-    async def _preview(args: dict) -> dict:
+    async def _preview(args: dict, **_) -> dict:
         async with client_factory() as client:
             pack = args.get("pack")
             try:
@@ -148,7 +172,7 @@ def register(registry: Registry, *, client_factory) -> None:
             "warnings": pv.warnings,
         }
 
-    async def _start(args: dict) -> dict:
+    async def _start(args: dict, **_) -> dict:
         async with client_factory() as client:
             pack = args.get("pack")
             if args.get("context_files"):
@@ -182,7 +206,7 @@ def register(registry: Registry, *, client_factory) -> None:
             "ephemeral_pack": pack if pack and pack.startswith(_EPHEMERAL_PREFIX) else None,
         }
 
-    async def _status(args: dict) -> dict:
+    async def _status(args: dict, **_) -> dict:
         async with client_factory() as client:
             s = await client.get_status(int(args["job_id"]))
         return {
@@ -198,7 +222,7 @@ def register(registry: Registry, *, client_factory) -> None:
             "error": s.error,
         }
 
-    async def _cancel(args: dict) -> dict:
+    async def _cancel(args: dict, **_) -> dict:
         async with client_factory() as client:
             try:
                 await client.cancel_job(int(args["job_id"]))
@@ -206,17 +230,51 @@ def register(registry: Registry, *, client_factory) -> None:
                 return {"error": "not_found", "message": str(e)}
         return {"cancelled": True, "job_id": int(args["job_id"])}
 
-    async def _wait(args: dict) -> dict:
+    async def _wait(args: dict, *, progress=None, **_) -> dict:
+        """Block on a running debate until done; report progress to client."""
         job_id = int(args["job_id"])
         save_to = args.get("save_to")
         ephemeral_pack = args.get("ephemeral_pack")
+
+        async def _report(p: float, total: float | None, msg: str) -> None:
+            if progress is not None:
+                try:
+                    await progress(p, total, msg)
+                except Exception:  # noqa: BLE001
+                    # Progress is best-effort — never let a notification
+                    # failure kill the tool call.
+                    pass
+
         async with client_factory() as client:
+            rounds_total = 1
+            try:
+                first_status = await client.get_status(job_id)
+                rounds_total = max(1, first_status.rounds_total)
+            except JobNotFound:
+                pass
+
             terminal: dict = {}
             try:
                 async for ev in client.stream_events(job_id):
-                    if ev.get("kind") in ("done", "error"):
+                    kind = ev.get("kind", "")
+                    msg = _friendly_progress(ev)
+                    if kind == "round_completed":
+                        idx = int(ev.get("round_index", 0)) + 1
+                        pct = min(95, int(100 * idx / (rounds_total + 1)))
+                        await _report(pct, 100, msg)
+                    elif kind == "judge_started":
+                        await _report(90, 100, msg)
+                    elif kind in ("done", "judge_completed"):
+                        await _report(100, 100, msg)
                         terminal = ev
                         break
+                    elif kind == "error":
+                        await _report(100, 100, msg)
+                        terminal = ev
+                        break
+                    else:
+                        # mid-round events — small bump so the UI ticks
+                        await _report(0, 100, msg)
             except (JobNotFound, NetworkError):
                 # Race: stream closed before we subscribed, or transient
                 # net hiccup. Fall through to archive.

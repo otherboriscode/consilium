@@ -93,6 +93,12 @@ def build_server(
             for t in registry.tools
         ]
 
+    async def _noop_progress(
+        _progress: float, _total: float | None, _message: str
+    ) -> None:
+        """Default progress reporter when the client didn't ask for updates."""
+        return None
+
     @server.call_tool()
     async def _call_tool(
         name: str, arguments: dict
@@ -100,7 +106,34 @@ def build_server(
         spec = registry.get(name)
         if spec is None:
             raise ValueError(f"Unknown tool: {name}")
-        result = await spec.handler(arguments or {})
+
+        # If the MCP client sent `_meta.progressToken`, forward every
+        # progress call as a JSON-RPC notification. Otherwise, use a no-op.
+        progress_fn = _noop_progress
+        try:
+            ctx = server.request_context
+            token = getattr(getattr(ctx, "meta", None), "progressToken", None)
+            if token is not None:
+                session = ctx.session
+
+                async def _emit(
+                    progress: float,
+                    total: float | None,
+                    message: str,
+                ) -> None:
+                    await session.send_progress_notification(
+                        progress_token=token,
+                        progress=progress,
+                        total=total,
+                        message=message,
+                    )
+
+                progress_fn = _emit
+        except LookupError:
+            # No request context (shouldn't happen in practice — SDK sets it).
+            pass
+
+        result = await spec.handler(arguments or {}, progress=progress_fn)
         # Normalize all results to a single TextContent block. MCP clients
         # (incl. Claude Code) render this fine; more elaborate content
         # types are follow-up work if we ever want images/files.

@@ -11,11 +11,11 @@ from consilium_mcp.registry import Registry, ToolSpec
 
 
 def register(registry: Registry, *, client_factory) -> None:
-    async def _list(_args: dict) -> list[str]:
+    async def _list(_args: dict, **_) -> list[str]:
         async with client_factory() as client:
             return await client.list_templates()
 
-    async def _show(args: dict) -> dict:
+    async def _show(args: dict, **_) -> dict:
         async with client_factory() as client:
             try:
                 return await client.show_template(args["name"])

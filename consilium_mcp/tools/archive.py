@@ -15,13 +15,13 @@ from consilium_mcp.registry import Registry, ToolSpec
 
 
 def register(registry: Registry, *, client_factory) -> None:
-    async def _search(args: dict) -> list[dict]:
+    async def _search(args: dict, **_) -> list[dict]:
         async with client_factory() as client:
             return await client.search_archive(
                 args["query"], limit=int(args.get("limit", 20))
             )
 
-    async def _get(args: dict) -> dict:
+    async def _get(args: dict, **_) -> dict:
         job_id = int(args["job_id"])
         save_to = args.get("save_to") or f"./consilium/{job_id:04d}.md"
         async with client_factory() as client:
@@ -37,12 +37,12 @@ def register(registry: Registry, *, client_factory) -> None:
             "bytes": len(md.encode("utf-8")),
         }
 
-    async def _stats(args: dict) -> list[dict]:
+    async def _stats(args: dict, **_) -> list[dict]:
         group_by = args.get("group_by", "model")
         async with client_factory() as client:
             return await client.archive_stats(group_by=group_by)
 
-    async def _roi(_args: dict) -> list[dict]:
+    async def _roi(_args: dict, **_) -> list[dict]:
         async with client_factory() as client:
             return await client.archive_roi()
 

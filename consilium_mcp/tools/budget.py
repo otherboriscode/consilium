@@ -12,19 +12,19 @@ from consilium_mcp.registry import Registry, ToolSpec
 
 
 def register(registry: Registry, *, client_factory) -> None:
-    async def _usage(_args: dict) -> dict:
+    async def _usage(_args: dict, **_) -> dict:
         async with client_factory() as client:
             return await client.get_usage()
 
-    async def _limits(_args: dict) -> dict:
+    async def _limits(_args: dict, **_) -> dict:
         async with client_factory() as client:
             return await client.get_limits()
 
-    async def _daily(_args: dict) -> str:
+    async def _daily(_args: dict, **_) -> str:
         async with client_factory() as client:
             return await client.get_daily_summary()
 
-    async def _alerts(_args: dict) -> dict:
+    async def _alerts(_args: dict, **_) -> dict:
         async with client_factory() as client:
             return await client.get_alerts()
 

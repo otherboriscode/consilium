@@ -15,18 +15,18 @@ from consilium_mcp.registry import Registry, ToolSpec
 
 
 def register(registry: Registry, *, client_factory) -> None:
-    async def _list(_args: dict) -> list[str]:
+    async def _list(_args: dict, **_) -> list[str]:
         async with client_factory() as client:
             return await client.list_packs()
 
-    async def _show(args: dict) -> dict:
+    async def _show(args: dict, **_) -> dict:
         async with client_factory() as client:
             try:
                 return await client.show_pack(args["name"])
             except JobNotFound as e:
                 return {"error": "not_found", "message": str(e)}
 
-    async def _create(args: dict) -> dict:
+    async def _create(args: dict, **_) -> dict:
         name = args["name"]
         file_paths = args["file_paths"]
         payload: list[tuple[str, bytes]] = []
@@ -41,7 +41,7 @@ def register(registry: Registry, *, client_factory) -> None:
         async with client_factory() as client:
             return await client.create_pack(name, files=payload)
 
-    async def _delete(args: dict) -> dict:
+    async def _delete(args: dict, **_) -> dict:
         async with client_factory() as client:
             try:
                 await client.delete_pack(args["name"])

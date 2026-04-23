@@ -15,7 +15,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-Handler = Callable[[dict[str, Any]], Awaitable[Any]]
+# Progress reporter signature: (progress, total, message) -> awaitable.
+# Handlers that don't care simply ignore the parameter (default is a no-op).
+ProgressFn = Callable[[float, float | None, str], Awaitable[None]]
+Handler = Callable[..., Awaitable[Any]]  # accepts args, **kwargs (progress=...)
 
 
 @dataclass

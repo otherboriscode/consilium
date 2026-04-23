@@ -21,6 +21,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from consilium_server.bot.client import ConsiliumClient
+from consilium_server.bot.error_handler import router as error_router
 from consilium_server.bot.handlers.archive import router as archive_router
 from consilium_server.bot.handlers.basic import router as basic_router
 from consilium_server.bot.handlers.budget import router as budget_router
@@ -54,6 +55,8 @@ def build_dispatcher(client: ConsiliumClient | None = None) -> Dispatcher:
     dp.include_router(budget_router)
     dp.include_router(packs_router)
     dp.include_router(templates_router)
+    # Error router last so it doesn't shadow normal handlers.
+    dp.include_router(error_router)
     return dp
 
 

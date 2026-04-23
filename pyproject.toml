@@ -49,7 +49,7 @@ dev = [
 
 [project.scripts]
 consilium = "consilium_cli.main:main"
-consilium-mcp = "consilium_mcp.server:main"
+consilium-mcp = "consilium_mcp.main:main"
 consilium-bot = "consilium_server.bot.main:main"
 consilium-api = "consilium_server.api.main:main"
 consilium-budget = "scripts.budget:main"

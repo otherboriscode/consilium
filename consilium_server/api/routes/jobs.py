@@ -36,6 +36,8 @@ from consilium.templates import TemplateError, load_template
 from consilium.usage import compute_usage
 from consilium_server.api.auth import AuthDep
 from consilium_server.api.models import (
+    JobListItem,
+    JobStatusResponse,
     ProgressEvent as ApiProgressEvent,
     SubmitJobRequest,
     SubmitJobResponse,
@@ -226,4 +228,95 @@ async def submit_job(
         estimated_cost_usd=preview.estimated_cost_usd,
         estimated_duration_seconds=preview.estimated_duration_seconds,
         warnings=[w.message for w in perm.warnings],
+    )
+
+
+def _handle_to_status(handle: JobHandle) -> JobStatusResponse:
+    return JobStatusResponse(
+        job_id=handle.job_id,
+        status=handle.status,
+        rounds_completed=handle.rounds_completed,
+        rounds_total=handle.rounds_total,
+        started_at=handle.started_at_iso,
+        completed_at=handle.completed_at_iso,
+        estimated_cost_usd=handle.estimated_cost_usd,
+        current_cost_usd=handle.current_cost_usd,
+        template=handle.template,
+        project=handle.project,
+        topic=handle.topic,
+        error=handle.error,
+    )
+
+
+def _handle_to_list_item(handle: JobHandle) -> JobListItem:
+    return JobListItem(
+        job_id=handle.job_id,
+        status=handle.status,
+        topic=handle.topic,
+        template=handle.template,
+        project=handle.project,
+        started_at=handle.started_at_iso,
+        cost_usd=handle.current_cost_usd,
+    )
+
+
+def _summary_to_list_item(summary) -> JobListItem:
+    return JobListItem(
+        job_id=summary.job_id,
+        status="completed",  # archive only stores completed jobs
+        topic=summary.topic,
+        template=summary.template_name,
+        project=summary.project,
+        started_at=summary.started_at,
+        cost_usd=summary.total_cost_usd,
+        duration_seconds=summary.duration_seconds,
+    )
+
+
+@router.get("", response_model=list[JobListItem])
+async def list_jobs(
+    _: AuthDep,
+    limit: int = 20,
+    project: str | None = None,
+) -> list[JobListItem]:
+    """Active jobs (from in-memory state) first, then recent completed jobs
+    from the archive, deduped by `job_id`."""
+    state = get_state()
+    active = [_handle_to_list_item(h) for h in state.all_active()]
+    archive = Archive(root=_archive_root())
+    recent = archive.list_jobs(project=project, limit=limit)
+    active_ids = {item.job_id for item in active}
+    merged = active[:]
+    for s in recent:
+        if s.job_id not in active_ids:
+            merged.append(_summary_to_list_item(s))
+    return merged[:limit]
+
+
+@router.get("/{job_id}", response_model=JobStatusResponse)
+async def get_job(job_id: int, _: AuthDep) -> JobStatusResponse:
+    """Look up an active job in memory; fall back to the archive; 404 otherwise."""
+    state = get_state()
+    if handle := state.get(job_id):
+        return _handle_to_status(handle)
+    archive = Archive(root=_archive_root())
+    # Archive.list_jobs doesn't have a "by job_id" query; fetch one row.
+    with archive._connect() as conn:  # type: ignore[attr-defined]
+        row = conn.execute(
+            "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    return JobStatusResponse(
+        job_id=row["job_id"],
+        status="completed",
+        rounds_completed=row["rounds"],
+        rounds_total=row["rounds"],
+        started_at=row["started_at"],
+        completed_at=row["completed_at"],
+        estimated_cost_usd=row["total_cost_usd"],
+        current_cost_usd=row["total_cost_usd"],
+        template=row["template_name"],
+        project=row["project"],
+        topic=row["topic"],
     )

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from consilium_server.api.models import JobStatus, ProgressEvent
 

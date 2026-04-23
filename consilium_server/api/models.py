@@ -87,3 +87,32 @@ class JobListItem(BaseModel):
     started_at: str
     cost_usd: float
     duration_seconds: float | None = None
+
+
+class ParticipantPreview(BaseModel):
+    """Per-participant preview row — used by the Telegram bot to render the
+    'hey, here's what will run' confirmation."""
+
+    role: str
+    model: str
+    mode: Literal["fast", "deep"]
+    fit: Literal["full", "summary", "exclude"]
+    estimated_cost_usd: float = 0.0  # per-participant split is follow-up work
+
+
+class PreviewJobResponse(BaseModel):
+    """Dry-run response: same pre-flight as POST /jobs, but nothing is
+    scheduled and cost-cap violations come back as body fields instead of
+    402 — the client (bot FSM) decides whether to show `force` or cancel."""
+
+    estimated_cost_usd: float
+    estimated_duration_seconds: float
+    context_tokens: int
+    template: str
+    rounds: int
+    participants: list[ParticipantPreview]
+    judge_model: str
+    allowed: bool
+    violations: list[str] = Field(default_factory=list)
+    violation_messages: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

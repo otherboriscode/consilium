@@ -69,9 +69,18 @@ def _next_job_id() -> int:
 
 
 def _prepare_submission(req: SubmitJobRequest):
-    """Validate + preview + cost-check. Returns (config, context_block, preview,
-    warnings). Raises HTTPException on any failure, matching the API contract:
-    404 unknown template/pack, 422 structural violation, 402 cost guard."""
+    """Validate + preview + cost-check.
+
+    Returns `(config, context_block, preview, perm)` where `perm` is the
+    `PermissionResult` from `check_permissions`. Caller decides what to do
+    with `perm.allowed=False`:
+
+    - `POST /jobs` raises 402 (refuses to run)
+    - `POST /preview` surfaces it in the response body (informational)
+
+    Raises `HTTPException` for hard-stop failures common to both callers:
+    404 on unknown template/pack, 422 on structural violations.
+    """
     try:
         template = load_template(req.template)
     except TemplateError as e:
@@ -117,16 +126,7 @@ def _prepare_submission(req: SubmitJobRequest):
         limits=limits,
         force=req.force,
     )
-    if not perm.allowed:
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "violations": [v.kind for v in perm.violations],
-                "messages": [v.message for v in perm.violations],
-                "estimated_cost_usd": preview.estimated_cost_usd,
-            },
-        )
-    return config, context_block, preview, [w.message for w in perm.warnings]
+    return config, context_block, preview, perm
 
 
 @router.post(
@@ -139,8 +139,18 @@ async def submit_job(
 ) -> SubmitJobResponse:
     """Schedule a debate. Returns 202 + job_id on accept; 402/422/429/404 on
     any pre-flight failure (see `_prepare_submission`)."""
-    config, context_block, preview, warnings = _prepare_submission(req)
+    config, context_block, preview, perm = _prepare_submission(req)
     _ = context_block  # already merged into config above
+    if not perm.allowed:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "violations": [v.kind for v in perm.violations],
+                "messages": [v.message for v in perm.violations],
+                "estimated_cost_usd": preview.estimated_cost_usd,
+            },
+        )
+    warnings = [w.message for w in perm.warnings]
 
     # 5. Allocate job_id and the JobHandle up front. Task is wired below.
     job_id = _next_job_id()

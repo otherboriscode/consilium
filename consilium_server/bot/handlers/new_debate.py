@@ -17,7 +17,6 @@ from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 
 from consilium_server.bot.client import (
     ConsiliumClient,
-    CostDenied,
     JobNotFound,
 )
 from consilium_server.bot.keyboards import (
@@ -203,20 +202,6 @@ async def _show_preview(
         preview = await client.preview_job(
             topic=topic, template=template, pack=pack
         )
-    except CostDenied as e:
-        # Show the denial + force-or-cancel inline keyboard.
-        lines = [
-            "⛔ <b>Cost guard отказал</b>:",
-            *[f"• {msg}" for msg in e.messages],
-            f"💰 Оценка: ${e.estimate:.2f}",
-        ]
-        await chat_target.answer(
-            "\n".join(lines),
-            reply_markup=force_or_cancel_keyboard(),
-            parse_mode="HTML",
-        )
-        await state.set_state(NewDebate.waiting_confirm)
-        return
     except JobNotFound as e:
         await chat_target.answer(f"⛔ {e}")
         await state.clear()
@@ -225,6 +210,21 @@ async def _show_preview(
         logger.exception("preview failed")
         await chat_target.answer(f"⚠️ Ошибка preview: {e}")
         await state.clear()
+        return
+
+    # Cost-cap violations come back in the body now (not as 402).
+    if not preview.allowed:
+        lines = [
+            "⛔ <b>Cost guard отказал</b>:",
+            *[f"• {msg}" for msg in preview.violation_messages],
+            f"💰 Оценка: ${preview.estimated_cost_usd:.2f}",
+        ]
+        await chat_target.answer(
+            "\n".join(lines),
+            reply_markup=force_or_cancel_keyboard(),
+            parse_mode="HTML",
+        )
+        await state.set_state(NewDebate.waiting_confirm)
         return
 
     lines = [
@@ -239,6 +239,15 @@ async def _show_preview(
         f"⏱ Оценка времени: ~{int(preview.estimated_duration_seconds // 60)} мин",
         f"💰 Оценка стоимости: ${preview.estimated_cost_usd:.2f}",
     ]
+    if preview.context_tokens:
+        lines.append(f"📚 Контекст: ~{preview.context_tokens:,} токенов")
+    # Surface per-participant fit decisions if any participant isn't "full".
+    degraded = [p for p in preview.participants if p.fit != "full"]
+    if degraded:
+        lines.append("")
+        for p in degraded:
+            icon = "📄" if p.fit == "summary" else "🚫"
+            lines.append(f"{icon} <b>{p.role}</b>: {p.fit}")
     if preview.warnings:
         lines.append("")
         lines.extend(f"⚠️ {w}" for w in preview.warnings)

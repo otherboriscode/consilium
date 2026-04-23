@@ -73,9 +73,26 @@ class JobStatus:
 
 
 @dataclass
+class ParticipantPreviewRow:
+    role: str
+    model: str
+    mode: str  # "fast" | "deep"
+    fit: str  # "full" | "summary" | "exclude"
+    estimated_cost_usd: float
+
+
+@dataclass
 class PreviewResult:
     estimated_cost_usd: float
     estimated_duration_seconds: float
+    context_tokens: int
+    template: str
+    rounds: int
+    participants: list[ParticipantPreviewRow]
+    judge_model: str
+    allowed: bool
+    violations: list[str]
+    violation_messages: list[str]
     warnings: list[str]
 
 
@@ -194,7 +211,12 @@ class ConsiliumClient:
         rounds: int | None = None,
     ) -> PreviewResult:
         """Dry-run submission: run structural validation and cost check,
-        return estimate without starting anything. 402 still raises CostDenied."""
+        return rich estimate without starting anything.
+
+        Cost-cap violations come back as `allowed=False` + `violations` in
+        the body (NOT as 402). 404 unknown-template/pack and 422 structural
+        violations still raise as with `/jobs`.
+        """
         body: dict = {
             "topic": topic,
             "template": template,
@@ -206,7 +228,22 @@ class ConsiliumClient:
         body = {k: v for k, v in body.items() if v is not None}
         r = await self._c().post("/preview", json=body)
         self._raise_for(r)
-        return PreviewResult(**r.json())
+        d = r.json()
+        return PreviewResult(
+            estimated_cost_usd=d["estimated_cost_usd"],
+            estimated_duration_seconds=d["estimated_duration_seconds"],
+            context_tokens=d.get("context_tokens", 0),
+            template=d.get("template", template),
+            rounds=d.get("rounds", 0),
+            participants=[
+                ParticipantPreviewRow(**p) for p in d.get("participants", [])
+            ],
+            judge_model=d.get("judge_model", ""),
+            allowed=d.get("allowed", True),
+            violations=d.get("violations", []),
+            violation_messages=d.get("violation_messages", []),
+            warnings=d.get("warnings", []),
+        )
 
     async def get_status(self, job_id: int) -> JobStatus:
         r = await self._c().get(f"/jobs/{job_id}")

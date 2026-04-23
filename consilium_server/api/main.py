@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from consilium_server.api.auth import AuthDep
+
 app = FastAPI(
     title="Consilium",
     version="0.6.0",
@@ -17,6 +19,13 @@ app = FastAPI(
 @app.get("/health", include_in_schema=False)
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# Stub: real routers get registered in Tasks 6.4+. Kept minimal here so the
+# auth dependency has a protected endpoint to gate.
+@app.get("/jobs", include_in_schema=False)
+async def list_jobs_stub(_: AuthDep) -> list[dict]:
+    return []
 
 
 def main() -> None:

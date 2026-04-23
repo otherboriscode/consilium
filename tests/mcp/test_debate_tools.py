@@ -12,6 +12,7 @@ import pytest
 from consilium_client import (
     ClientConfig,
     CostDenied,
+    JobNotFound,
     JobStatus,
     ParticipantPreviewRow,
     PreviewResult,
@@ -94,6 +95,8 @@ class _FakeClient:
         self.calls.append(("cancel_job", {"job_id": job_id}))
 
     async def get_status(self, job_id):
+        if getattr(self, "raise_status_not_found", False):
+            raise JobNotFound(f"Job {job_id} not found")
         return self.status_return or JobStatus(
             job_id=job_id,
             status="completed",
@@ -246,3 +249,21 @@ async def test_wait_error_returns_failure_dict(wrapper, fake_client, tmp_path):
     result = await spec.handler({"job_id": 42, "save_to": str(tmp_path / "x.md")})
     assert result["error"] == "job_failed"
     assert "provider blew up" in result["message"]
+
+
+async def test_wait_handles_job_not_found_without_unbound_local(
+    wrapper, fake_client, tmp_path
+):
+    """R1 regression — when get_status raises JobNotFound after the
+    stream completes, the final return must not crash with
+    UnboundLocalError on `status` (Phase 8 review fix)."""
+    fake_client._stream_events = [{"kind": "done", "message": "ok"}]
+    fake_client.raise_status_not_found = True
+    spec = wrapper.registry.get("consilium_wait")
+    result = await spec.handler(
+        {"job_id": 42, "save_to": str(tmp_path / "out.md")}
+    )
+    # Should reach the happy path and return md_path; cost_usd is None
+    # because we couldn't fetch status.
+    assert result["md_path"] == str(tmp_path / "out.md")
+    assert result["cost_usd"] is None

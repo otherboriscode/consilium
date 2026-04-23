@@ -117,6 +117,7 @@ async def confirm_and_run(
             job_id=submit.job_id,
             chat_id=msg.chat.id,
             status_message_id=status_msg.message_id,
+            pack_name=pack,
         )
     )
 
@@ -128,71 +129,87 @@ async def _watch_job(
     job_id: int,
     chat_id: int,
     status_message_id: int,
+    pack_name: str | None = None,
 ) -> None:
-    """Consume SSE, push progress, deliver final TL;DR + .md on completion."""
+    """Consume SSE, push progress, deliver final TL;DR + .md on completion.
+
+    If `pack_name` is an `adhoc-…` ephemeral pack created during /new,
+    it's deleted in a finally so the user's pack list doesn't accrete
+    junk over time (R3 from Phase 8 review).
+    """
     poster = ProgressPoster(
         bot=bot, chat_id=chat_id, message_id=status_message_id
     )
     delivered = False
     try:
-        async for event in client.stream_events(job_id):
-            kind = event.get("kind", "")
-            if kind == "round_started":
-                await poster.push(
-                    f"🎯 Дискуссия #{job_id}\n⏳ Раунд {event.get('round_index', 0)} пошёл…"
-                )
-            elif kind == "participant_completed":
-                role = event.get("role_slug") or "?"
-                await poster.push(
-                    f"🎯 Дискуссия #{job_id}\n✓ {role} ответил "
-                    f"(раунд {event.get('round_index', 0)})"
-                )
-            elif kind == "participant_failed":
-                role = event.get("role_slug") or "?"
-                err = event.get("error") or event.get("message") or "неизвестно"
-                await poster.push(
-                    f"🎯 Дискуссия #{job_id}\n⚠️ {role}: {err}"
-                )
-            elif kind == "round_completed":
-                await poster.push(
-                    f"🎯 Дискуссия #{job_id}\n"
-                    f"✅ Раунд {event.get('round_index', 0)} завершён"
-                )
-            elif kind == "judge_started":
-                await poster.push(
-                    f"🎯 Дискуссия #{job_id}\n⚖️ Судья синтезирует…"
-                )
-            elif kind in ("judge_completed", "done"):
-                await poster.flush_now()
-                await _deliver_final(bot, client, job_id, chat_id)
-                delivered = True
-                return
-            elif kind == "judge_failed":
-                await poster.push(
-                    f"🎯 Дискуссия #{job_id}\n❌ Судья сорвался: "
-                    f"{event.get('error') or 'неизвестно'}"
-                )
-            elif kind == "error":
-                await poster.push(
-                    f"❌ Дискуссия #{job_id} упала: {event.get('message', '')}"
-                )
-                return
-    except JobNotFound:
-        # Race: job finished before we subscribed. Fall through to archive.
-        pass
-    except Exception as e:
-        logger.exception("SSE watch failed for job %d", job_id)
-        await bot.send_message(
-            chat_id, f"❌ Потеря связи с API для #{job_id}: {e}"
-        )
-        return
-
-    # Stream ended without a terminal event we handled — fall back to archive.
-    if not delivered:
         try:
-            await _deliver_final(bot, client, job_id, chat_id)
-        except Exception:
-            logger.exception("fallback delivery failed for job %d", job_id)
+            async for event in client.stream_events(job_id):
+                kind = event.get("kind", "")
+                if kind == "round_started":
+                    await poster.push(
+                        f"🎯 Дискуссия #{job_id}\n⏳ Раунд {event.get('round_index', 0)} пошёл…"
+                    )
+                elif kind == "participant_completed":
+                    role = event.get("role_slug") or "?"
+                    await poster.push(
+                        f"🎯 Дискуссия #{job_id}\n✓ {role} ответил "
+                        f"(раунд {event.get('round_index', 0)})"
+                    )
+                elif kind == "participant_failed":
+                    role = event.get("role_slug") or "?"
+                    err = event.get("error") or event.get("message") or "неизвестно"
+                    await poster.push(
+                        f"🎯 Дискуссия #{job_id}\n⚠️ {role}: {err}"
+                    )
+                elif kind == "round_completed":
+                    await poster.push(
+                        f"🎯 Дискуссия #{job_id}\n"
+                        f"✅ Раунд {event.get('round_index', 0)} завершён"
+                    )
+                elif kind == "judge_started":
+                    await poster.push(
+                        f"🎯 Дискуссия #{job_id}\n⚖️ Судья синтезирует…"
+                    )
+                elif kind in ("judge_completed", "done"):
+                    await poster.flush_now()
+                    await _deliver_final(bot, client, job_id, chat_id)
+                    delivered = True
+                    return
+                elif kind == "judge_failed":
+                    await poster.push(
+                        f"🎯 Дискуссия #{job_id}\n❌ Судья сорвался: "
+                        f"{event.get('error') or 'неизвестно'}"
+                    )
+                elif kind == "error":
+                    await poster.push(
+                        f"❌ Дискуссия #{job_id} упала: {event.get('message', '')}"
+                    )
+                    return
+        except JobNotFound:
+            # Race: job finished before we subscribed. Fall through to archive.
+            pass
+        except Exception as e:
+            logger.exception("SSE watch failed for job %d", job_id)
+            await bot.send_message(
+                chat_id, f"❌ Потеря связи с API для #{job_id}: {e}"
+            )
+            return
+
+        # Stream ended without a terminal event we handled — fall back to archive.
+        if not delivered:
+            try:
+                await _deliver_final(bot, client, job_id, chat_id)
+            except Exception:
+                logger.exception("fallback delivery failed for job %d", job_id)
+    finally:
+        # Cleanup ephemeral adhoc-pack regardless of outcome (R3).
+        if pack_name and pack_name.startswith("adhoc-"):
+            try:
+                await client.delete_pack(pack_name)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "failed to cleanup adhoc pack %s: %s", pack_name, e
+                )
 
 
 async def _deliver_final(

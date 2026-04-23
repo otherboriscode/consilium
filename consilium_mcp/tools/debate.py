@@ -23,6 +23,7 @@ from consilium_client import (
     ConsiliumClient,
     CostDenied,
     JobNotFound,
+    JobStatus,
     NetworkError,
 )
 from consilium_mcp.registry import Registry, ToolSpec
@@ -280,6 +281,9 @@ def register(registry: Registry, *, client_factory) -> None:
                 # net hiccup. Fall through to archive.
                 pass
 
+            # Pre-bind so the JobNotFound branch leaves a sane sentinel
+            # for the cost_usd lookup at the end (R1 from Phase 8 review).
+            status: JobStatus | None = None
             topic = ""
             try:
                 status = await client.get_status(job_id)

@@ -327,9 +327,26 @@ consilium budget usage
 # Last 5 archived debates
 consilium archive list --limit 5
 
+# End-to-end smoke after a deploy / restart (~$0.07, ~20 сек)
+#   Exercises the full stack: nginx → API → Anthropic → archive save.
+#   Faster + 10× cheaper than a real council as a health check.
+consilium solo --yes "smoke test после деплоя $(date +%F)"
+
 # Tail SSE events in real time (if a job is running)
 ssh consilium@89.167.73.98 "journalctl -u consilium-api -f | grep -i 'event\|job'"
 ```
+
+### Tier ladder (usage-side context)
+
+Three cost tiers are available to end-users; see `docs/INSTALL.md` for
+the decision rule. Operationally relevant because per-job-cap limits
+in `/etc/consilium/limits.yaml` apply to all three:
+
+| Tier | Command | Est. cost | Typical use |
+|------|---------|-----------|-------------|
+| 1 | `consilium solo "…"` | ~$0.07 | baseline, smoke tests |
+| 2 | `consilium devil "…"` | ~$0.18 | decisions w/ self-critique |
+| 3 | `consilium "…"` | ~$0.70 | full 6-model council |
 
 ---
 

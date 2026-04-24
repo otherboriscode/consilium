@@ -53,6 +53,25 @@ class WhitelistMiddleware(BaseMiddleware):
         data: dict[str, Any],
     ) -> Any:
         user = data.get("event_from_user")
+        # Diagnostic log: every update that enters the middleware. Keeps
+        # the silent-drop UX but makes it obvious what's arriving.
+        _preview = ""
+        try:
+            from aiogram.types import Message, CallbackQuery
+            if isinstance(event, Message):
+                _preview = f"message text={event.text!r}"
+            elif isinstance(event, CallbackQuery):
+                _preview = f"callback data={event.data!r}"
+            else:
+                _preview = f"type={type(event).__name__}"
+        except Exception:  # noqa: BLE001
+            pass
+        logger.info(
+            "incoming update from user_id=%s username=%s — %s",
+            user.id if user else None,
+            user.username if user else None,
+            _preview,
+        )
         if user is not None and user.id in self.allowed:
             return await handler(event, data)
         logger.warning(

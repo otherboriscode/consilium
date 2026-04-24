@@ -15,7 +15,7 @@ async def cmd_start(m: Message) -> None:
         "Команды:\n"
         "/new — новая дискуссия\n"
         "/jobs — активные и недавние\n"
-        "/archive <запрос> — поиск по архиву\n"
+        "/archive &lt;запрос&gt; — поиск по архиву\n"
         "/result &lt;id&gt; — markdown по job_id\n"
         "/stats — расход за месяц\n"
         "/cost — сегодня\n"

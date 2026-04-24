@@ -79,7 +79,13 @@ install -m 750 -o root -g consilium "$REPO_ROOT/deploy/backup/consilium-backup.s
 
 echo "==> 5/5 Reloading systemd + enabling services"
 systemctl daemon-reload
-systemctl enable consilium-api consilium-bot consilium-backup.timer
+systemctl enable consilium-api consilium-bot
+# Backup timer enabled only if B2 creds look filled in.
+if grep -q '^B2_ACCOUNT_ID=..' /etc/consilium/.env 2>/dev/null; then
+    systemctl enable consilium-backup.timer
+else
+    echo "  (skipping consilium-backup.timer — B2 creds missing; add them to .env later)"
+fi
 systemctl reload nginx
 
 # Start API + bot only if a venv exists at the expected path.
@@ -95,6 +101,7 @@ fi
 echo
 echo "==> Done. Next manual steps (see docs/OPS.md):"
 echo "  1. certbot --nginx -d $NGINX_DOMAIN  (TLS cert)"
-echo "  2. restic init  (after sourcing /etc/consilium/.env for B2 creds)"
-echo "  3. ufw allow 22/tcp 80/tcp 443/tcp && ufw enable"
-echo "  4. Set provider-side hard limits in web consoles"
+echo "  2. Set TELEGRAM_ALLOWED_USER_IDS in /etc/consilium/.env (your Telegram user_id)"
+echo "  3. Set B2 creds + restic init (optional, for backups)"
+echo "  4. ufw allow 22/tcp 80/tcp 443/tcp && ufw enable"
+echo "  5. Set provider-side hard limits in web consoles (Anthropic, OpenRouter, Perplexity)"

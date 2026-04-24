@@ -2,9 +2,13 @@
 
 How to deploy, run, monitor, back up, and recover Consilium on Boris's VPS.
 
-> **VPS:** `89.167.73.98`
+> **VPS:** `89.167.73.98` (Hetzner, Ubuntu 24.04.4 LTS, 8 GB RAM, 150 GB disk)
 > **Domain:** `consilium.89.167.73.98.nip.io` (nip.io wildcard, no DNS to configure)
-> **OS assumed:** Debian 12 or Ubuntu 22.04+
+> **TLS:** Let's Encrypt cert, auto-renew via `certbot.timer`, expires 2026-07-23
+> **Bot:** `@NeuroConcilium_bot` (Telegram), long-polling, whitelist-gated
+> **Deploy status as of 2026-04-24:** ✅ API live, ✅ Bot running (whitelist
+> pending), ⚠️ Backup deferred (no B2 creds yet), ⚠️ ufw + SSH hardening
+> left untouched intentionally — see §7 Known issues.
 
 ---
 
@@ -344,8 +348,56 @@ Estimated time to full recovery: **~1 hour** (mostly waiting on `pip install` an
 
 ---
 
-## 7. Known issues / TODO
+## 7. Known issues / TODO (as of 2026-04-24)
 
-- [ ] B2 backup credentials need to be acquired and added to `/etc/consilium/.env` (otherwise `consilium-backup.timer` fails silently).
-- [ ] Provider-side hard limits are a **manual** action — no automation will reproduce them on a fresh VPS. Keep screenshots in 1Password.
-- [ ] `pip-audit` should be run monthly: `pip-audit -r <(/opt/consilium/.venv/bin/pip freeze)`.
+### Open items
+
+- [x] ~~`TELEGRAM_ALLOWED_USER_IDS` is empty~~ — **filled in 2026-04-24,
+  user_id = `74859890`. Bot is active.**
+  To change/add:
+  ```bash
+  ssh root@89.167.73.98 "sed -i 's/^TELEGRAM_ALLOWED_USER_IDS=.*/TELEGRAM_ALLOWED_USER_IDS=<CSV_OF_IDS>/' /etc/consilium/.env && systemctl restart consilium-bot"
+  # Get user_id by messaging @userinfobot on Telegram.
+  ```
+
+- [ ] **Backblaze B2 credentials not configured** —
+  `consilium-backup.service`/`timer` are **not** installed yet.
+  When you have a B2 bucket, add `B2_ACCOUNT_ID`, `B2_APPLICATION_KEY`,
+  `RESTIC_REPOSITORY`, `RESTIC_PASSWORD` to `/etc/consilium/.env`, then:
+  ```bash
+  ssh root@89.167.73.98 "apt install -y restic && \
+      install -m 644 /opt/consilium/deploy/systemd/consilium-backup.service /etc/systemd/system/ && \
+      install -m 644 /opt/consilium/deploy/systemd/consilium-backup.timer /etc/systemd/system/ && \
+      install -m 750 -o root -g consilium /opt/consilium/deploy/backup/consilium-backup.sh /usr/local/bin/ && \
+      systemctl daemon-reload && \
+      set -a && source /etc/consilium/.env && set +a && restic init && \
+      systemctl enable --now consilium-backup.timer"
+  ```
+
+- [ ] **Provider-side hard limits** (manual web actions — see §2.8):
+  Anthropic $200/mo, OpenRouter no-refill cap, Perplexity $100/mo.
+  Keep screenshots in 1Password.
+
+### Security hardening — deferred, safe to ignore for single-user MVP
+
+- [ ] **ufw firewall is `inactive`** on the VPS. Ports 22/80/443 are open via
+  the cloud-provider-level firewall (or not — we haven't audited), which is
+  fine for a single-tenant box. To enable ufw (carefully, to avoid locking
+  out SSH):
+  ```bash
+  ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw --force enable
+  ```
+- [ ] **SSH: `PasswordAuthentication yes` and `PermitRootLogin yes`** in
+  `/etc/ssh/sshd_config`. Recommend switching to `prohibit-password` +
+  `PasswordAuthentication no` once you confirm your key-based login works
+  from all devices you use.
+
+### Nice-to-have, not urgent
+
+- [ ] `pip-audit` monthly: `pip-audit -r <(/opt/consilium/.venv/bin/pip freeze)`.
+- [ ] CLI `consilium -t <tpl> "тема"` shortcut is broken — first arg is
+  treated as `<command>` not as positional. Works fine with explicit
+  `consilium debate -t <tpl> "тема"`. Minor UX fix for later.
+- [ ] Perplexity `sonar-deep-research` leaks `<think>...</think>` tags
+  into debate output (visible in debate #2 transcript). Consider a
+  post-process filter in the orchestrator.

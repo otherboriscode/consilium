@@ -3,7 +3,7 @@
 How to deploy, run, monitor, back up, and recover Consilium on Boris's VPS.
 
 > **VPS:** `89.167.73.98`
-> **Domain:** `consilium.89-167-73-98.nip.io` (nip.io wildcard, no DNS to configure)
+> **Domain:** `consilium.89.167.73.98.nip.io` (nip.io wildcard, no DNS to configure)
 > **OS assumed:** Debian 12 or Ubuntu 22.04+
 
 ---
@@ -113,7 +113,7 @@ curl -s http://127.0.0.1:8421/templates -H "Authorization: Bearer $(grep ^CONSIL
 
 ```bash
 apt install -y certbot python3-certbot-nginx
-certbot --nginx -d consilium.89-167-73-98.nip.io \
+certbot --nginx -d consilium.89.167.73.98.nip.io \
     --non-interactive --agree-tos --email otherboris@gmail.com
 systemctl reload nginx
 
@@ -123,7 +123,7 @@ systemctl list-timers | grep certbot
 
 Verify externally (from Mac):
 ```bash
-curl -sI https://consilium.89-167-73-98.nip.io/ | head -3
+curl -sI https://consilium.89.167.73.98.nip.io/ | head -3
 # → HTTP/2 401  (no auth header) — proves TLS works
 ```
 
@@ -308,7 +308,7 @@ restic check --read-data-subset=5% # 5% spot-check (what the daily timer does)
 | Disk filling up | `du -sh /var/lib/consilium/*`, then `restic prune` |
 | Cost-guard blocking everything | `consilium budget usage` vs `consilium budget limits` |
 | `consilium-backup` failing | `journalctl -u consilium-backup`, verify B2 creds in `.env` |
-| Mac CLI fails with "Network" | Confirm DNS: `nslookup consilium.89-167-73-98.nip.io` |
+| Mac CLI fails with "Network" | Confirm DNS: `nslookup consilium.89.167.73.98.nip.io` |
 | `consilium-api` won't start | Check `EnvironmentFile=/etc/consilium/.env` exists with correct perms (640 root:consilium) |
 
 ### Useful one-liners

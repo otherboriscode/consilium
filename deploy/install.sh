@@ -24,7 +24,7 @@
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-/opt/consilium}"
-NGINX_DOMAIN="${NGINX_DOMAIN:-consilium.89-167-73-98.nip.io}"
+NGINX_DOMAIN="${NGINX_DOMAIN:-consilium.89.167.73.98.nip.io}"
 
 if [[ $EUID -ne 0 ]]; then
     echo "Run as root (use sudo)." >&2

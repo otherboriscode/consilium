@@ -68,7 +68,7 @@ participants:
       — СТРОГО 500–700 слов. Если закончил раньше — сдай.
       — Без обращений и резюме. Пиши как реплику в живой дискуссии.
 
-  - model: claude-sonnet-4-5
+  - model: x-ai/grok-4
     role: tcm_integrator
     max_tokens: 4500
     system_prompt: |
@@ -159,7 +159,7 @@ participants:
       — СТРОГО 500–700 слов. Если закончил раньше — сдай.
       — Без обращений и резюме. Пиши как реплику в живой дискуссии.
 
-  - model: perplexity/sonar-reasoning-pro
+  - model: perplexity/sonar-deep-research
     role: trial_methodologist
     max_tokens: 6000
     system_prompt: |

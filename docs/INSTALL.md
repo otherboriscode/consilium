@@ -95,6 +95,39 @@ consilium packs show tanaa
 consilium packs delete old
 ```
 
+### Three tiers of analysis — pick the right one
+
+Full 6-model council isn't always worth 5× the cost of one Opus.
+
+```bash
+# Tier 1 — baseline, ~$0.07, ~20 сек
+#   One Opus-4-7, one round, haiku repackages into standard sections.
+#   Good for: sanity-checking a thesis, quick research, low-stakes Qs.
+consilium solo "вопрос"
+
+# Tier 2 — self-critique, ~$0.18, ~1 мин
+#   Opus answers, then spends round 1 attacking its own answer;
+#   Opus judge synthesizes the trajectory. Gets you the meta-level
+#   ("where was I overconfident?") without paying for 5 other models.
+#   Good for: decisions, when you want more than a monologue.
+consilium devil "вопрос"
+
+# Tier 3 — full council, ~$0.70, ~3 мин
+#   6 models × 2 rounds, each critiques the others, Opus synthesizes.
+#   Good for: genuinely contested questions where multiple
+#   expert camps think differently (product concept, unit economics,
+#   positioning). Your core use case.
+consilium "вопрос"                             # default: product_concept
+consilium debate -t acupuncture_debate "..."  # any named template
+```
+
+**Rule of thumb**: do Tier 1 first, decide whether Tier 2 or 3 adds
+enough to justify the extra spend. For well-scoped factual questions
+with strong scientific consensus, Tier 1 often ties Tier 3 on substance.
+For open-ended concept work where a marketer, engineer, and economist
+would legitimately disagree, only Tier 3 gives you the geometry of the
+disagreement.
+
 ---
 
 ## 3. Install the MCP server in Claude Code

@@ -65,12 +65,23 @@ def _default_search_dirs() -> list[Path]:
     return [user_custom, pkg_root / "templates_default"]
 
 
+def _is_file_safe(path: Path) -> bool:
+    """Like Path.is_file() but returns False on EACCES / ENOENT instead of
+    raising. Needed on hardened runtimes (systemd ProtectHome=yes) where
+    Python 3.12's is_file() propagates PermissionError for inaccessible
+    home directories."""
+    try:
+        return path.is_file()
+    except (PermissionError, FileNotFoundError, OSError):
+        return False
+
+
 def load_template(name: str, *, search_dirs: list[Path] | None = None) -> Template:
     """Load template by name. `search_dirs` precedence: first wins."""
     dirs = search_dirs or _default_search_dirs()
     for d in dirs:
         path = d / f"{name}.yaml"
-        if path.is_file():
+        if _is_file_safe(path):
             text = path.read_text(encoding="utf-8")
             try:
                 data = yaml.safe_load(text)
@@ -91,11 +102,15 @@ def load_template(name: str, *, search_dirs: list[Path] | None = None) -> Templa
 
 
 def list_templates(*, search_dirs: list[Path] | None = None) -> list[str]:
-    """All unique template names across search dirs, sorted alphabetically."""
+    """All unique template names across search dirs, sorted alphabetically.
+    Silently skips inaccessible dirs (e.g. systemd ProtectHome=yes)."""
     dirs = search_dirs or _default_search_dirs()
     names: set[str] = set()
     for d in dirs:
-        if d.is_dir():
-            for p in d.glob("*.yaml"):
-                names.add(p.stem)
+        try:
+            if d.is_dir():
+                for p in d.glob("*.yaml"):
+                    names.add(p.stem)
+        except (PermissionError, OSError):
+            continue
     return sorted(names)

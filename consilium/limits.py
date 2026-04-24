@@ -55,10 +55,17 @@ def _default_limits_path() -> Path:
 
 
 def load_limits(*, path: Path | None = None) -> Limits:
-    """Load limits from YAML. Missing file → defaults. Partial YAML → merged
-    into defaults (unspecified fields stay at their default)."""
+    """Load limits from YAML. Missing/inaccessible file → defaults. Partial
+    YAML → merged into defaults (unspecified fields stay at their default).
+
+    Gracefully returns defaults if the default path isn't accessible
+    (e.g. systemd ProtectHome=yes blocks ~/.config)."""
     p = path if path is not None else _default_limits_path()
-    if not p.is_file():
+    try:
+        exists = p.is_file()
+    except (PermissionError, OSError):
+        exists = False
+    if not exists:
         return DEFAULT_LIMITS
 
     data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}

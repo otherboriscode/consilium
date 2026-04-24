@@ -15,12 +15,17 @@ from consilium_cli.commands import (
     archive as archive_cmd,
     budget as budget_cmd,
     debate as debate_cmd,
+    devil as devil_cmd,
     jobs as jobs_cmd,
     packs as packs_cmd,
+    solo as solo_cmd,
     templates as templates_cmd,
 )
 
-_SUBCOMMANDS = ("debate", "jobs", "archive", "packs", "budget", "templates")
+_SUBCOMMANDS = (
+    "debate", "solo", "devil",
+    "jobs", "archive", "packs", "budget", "templates",
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -38,6 +43,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     debate_cmd.register(
         sub.add_parser("debate", help="Запустить новую дискуссию")
+    )
+    solo_cmd.register(
+        sub.add_parser("solo", help="Один Opus, без дискуссии (baseline)")
+    )
+    devil_cmd.register(
+        sub.add_parser(
+            "devil",
+            help="Opus спорит сам с собой — дешёвый эрзац-консилиум",
+        )
     )
     jobs_cmd.register(
         sub.add_parser("jobs", help="Активные и недавние дискуссии")
